@@ -41,7 +41,7 @@ class ProviderConfig:
     """快慢路由（ModelRouterMiddleware）里"便宜/快速"这一档使用的模型。"""
 
     @classmethod
-    def from_env(cls) -> "ProviderConfig":
+    def from_env(cls) -> ProviderConfig:
         """从环境变量构造一份配置——这是不传参数时的默认行为。"""
         return cls(
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),

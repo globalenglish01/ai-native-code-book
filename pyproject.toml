@@ -5,6 +5,7 @@ members = ["packages/*"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+    "ruff>=0.16",
     "ainative-core",
     "ainative-guardrail",
     "ainative-prompt",
@@ -39,3 +40,32 @@ package = false
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S", "RUF", "SIM", "BLE", "PLE"]
+ignore = [
+    "E501",
+    # 本代码库大量docstring/注释/字符串故意使用中文全角标点——不是需要
+    # 修正的"意外的易混淆字符"，是正常的中文写作习惯。
+    "RUF001", "RUF002", "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 零宽字符/双向控制字符出现在正则字符类里是故意的安全检测特征（抵御同形字/
+# 零宽字符绕过注入检测），不是需要转义清理的"意外"字符。
+"packages/ainative-security/src/ainative_security/output_safety.py" = ["PLE2502", "PLE2515"]
+# 测试代码里的exec()是故意的——验证CLI生成的模板代码真的能被执行，不是漏洞。
+"packages/ainative-cli/tests/test_templates_execution.py" = ["S102"]
+# LLM返回的JSON解析：任何格式异常都视为"这次判分不可用"，故意用宽泛捕获。
+"packages/ainative-prompt/src/ainative_prompt/judge.py" = ["BLE001"]
+"packages/ainative-eval/src/ainative_eval/gate.py" = ["BLE001"]
+# 测试代码依赖assert做断言（pytest的标准写法）；测试里的一次性fake类
+# （_FakeRequest/_FakeModel）只会被实例化一次，"多实例共享可变默认值"这个
+# RUF012顾虑不适用，不值得为一次性fixture类引入ClassVar样板代码。
+"**/tests/*.py" = ["S101", "RUF012"]
+# 测试fixture里的"jwt_secret"/"changeme"是用来验证secret_drift检测逻辑的
+# 假配置值，不是真实密钥。
+"packages/ainative-security/tests/test_secret_drift.py" = ["S105", "S106"]

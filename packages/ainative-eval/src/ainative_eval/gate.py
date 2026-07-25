@@ -138,7 +138,7 @@ class Gate:
         for check in self._checks:
             try:
                 result = check.check_fn()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 result = GateResult(
                     dimension=check.name,
                     gating=check.gating,

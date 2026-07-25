@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from ainative_core.protocols import AgentCapability
 from ainative_a2a.registry import InMemoryAgentRegistry
+from ainative_core.protocols import AgentCapability
 
 
 def test_register_and_find_agents_for_capability():

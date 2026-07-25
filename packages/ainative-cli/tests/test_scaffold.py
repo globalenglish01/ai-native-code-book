@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from ainative_cli.scaffold import ProjectAlreadyExistsError, scaffold_project
 from ainative_cli.templates import get_template
 

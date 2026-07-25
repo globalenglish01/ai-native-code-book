@@ -72,7 +72,7 @@ def test_maybe_recheck_boundary_uses_conservative_value_when_consistent():
 
 
 def test_maybe_recheck_boundary_flags_needs_review_when_inconsistent():
-    score, needs_review, note = maybe_recheck_boundary(
+    _score, needs_review, note = maybe_recheck_boundary(
         0.82, green_min=0.8, boundary_tolerance=0.05, recheck_max_diff=0.1,
         rescore=lambda: 0.5,
     )

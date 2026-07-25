@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from ainative_mcp.config import build_mcp_config, build_safe_env, merge_mcp_configs
 
 

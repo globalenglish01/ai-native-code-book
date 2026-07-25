@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from ainative_security.output_safety import (
     OutputSafetyMiddleware,
     SafetyViolationError,

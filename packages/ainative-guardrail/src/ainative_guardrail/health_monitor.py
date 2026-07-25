@@ -79,7 +79,10 @@ class GuardHealthMonitorMiddleware(AgentMiddleware):
                     "guard_health_event": "multi_guard_near_limit",
                     "hot_dimensions": list(hot.keys()),
                     "warn_ratio": self._warn_ratio,
-                    "dimensions": {k: {"current": c, "limit": l, "ratio": r} for k, (c, l, r) in dims.items()},
+                    "dimensions": {
+                        k: {"current": current, "limit": limit, "ratio": ratio}
+                        for k, (current, limit, ratio) in dims.items()
+                    },
                 },
             )
             return dims

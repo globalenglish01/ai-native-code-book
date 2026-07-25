@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import pytest
-
-from ainative_core.protocols import A2ATask, AgentCapability
 from ainative_a2a.dispatcher import DelegationLimitExceeded, Dispatcher
 from ainative_a2a.registry import InMemoryAgentRegistry
 from ainative_a2a.transport import InProcessTransport
+from ainative_core.protocols import A2ATask, AgentCapability
 
 
 def _make_dispatcher(*, max_delegation_depth: int = 5) -> tuple[Dispatcher, InProcessTransport, InMemoryAgentRegistry]:
@@ -32,7 +31,7 @@ async def test_delegate_resolves_target_by_capability_and_returns_result():
 
 @pytest.mark.asyncio
 async def test_delegate_with_explicit_target_agent_skips_discovery():
-    dispatcher, transport, registry = _make_dispatcher()
+    dispatcher, transport, _registry = _make_dispatcher()
 
     async def handler(task: A2ATask) -> dict:
         return {"ok": True}
@@ -53,7 +52,7 @@ async def test_delegate_raises_lookup_error_when_no_agent_has_capability():
 
 @pytest.mark.asyncio
 async def test_delegate_raises_lookup_error_when_capability_is_ambiguous():
-    dispatcher, transport, registry = _make_dispatcher()
+    dispatcher, _transport, registry = _make_dispatcher()
     registry.register("agent_a", AgentCapability(name="shared", description=""))
     registry.register("agent_b", AgentCapability(name="shared", description=""))
 
@@ -80,7 +79,7 @@ async def test_delegation_chain_records_sender_in_task():
 @pytest.mark.asyncio
 async def test_cyclic_delegation_is_rejected():
     """A delegates to B; B tries to delegate back to A -> must be rejected."""
-    dispatcher, transport, registry = _make_dispatcher()
+    dispatcher, _transport, registry = _make_dispatcher()
     registry.register("agent_a", AgentCapability(name="task_a", description=""))
     registry.register("agent_b", AgentCapability(name="task_b", description=""))
 

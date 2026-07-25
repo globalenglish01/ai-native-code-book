@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from ainative_memory.redacting_backend import wrap_summarization_backend
 
 

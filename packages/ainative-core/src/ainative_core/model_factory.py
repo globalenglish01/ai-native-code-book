@@ -20,7 +20,7 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from langchain.agents.middleware import ModelFallbackMiddleware
@@ -37,7 +37,7 @@ _NO_TEMPERATURE_MARKERS = ("reasoner", "o1", "o3", "o4")
 """这几类推理模型不支持自定义temperature，传了反而会报错，需要在拼kwargs时跳过。"""
 
 
-class ModelProvider(str, Enum):
+class ModelProvider(StrEnum):
     ANTHROPIC = "anthropic"
     DEEPSEEK = "deepseek"
     OPENAI = "openai"

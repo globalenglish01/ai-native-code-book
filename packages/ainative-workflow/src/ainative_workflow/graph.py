@@ -23,9 +23,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ class WorkflowPaused(Exception):
         self.payload = payload
 
 
-class NodeStatus(str, Enum):
+class NodeStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -230,6 +230,4 @@ class Workflow:
         for dep in node.depends_on:
             if run.node_status[dep] == NodeStatus.SKIPPED and node.skip_if_dependency_skipped:
                 return True
-        if node.condition is not None and not node.condition(run.context):
-            return True
-        return False
+        return node.condition is not None and not node.condition(run.context)

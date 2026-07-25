@@ -112,8 +112,8 @@ def _decode_layers(text: str) -> list[str]:
             dec = urllib.parse.unquote(text)
             if dec and dec != text:
                 variants.append(dec[:_MAX_VARIANT_LEN])
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[Safety] URL-decode layer failed, skipping this variant: %s", exc)
     for blob in _B64_BLOB_RE.findall(text)[:_MAX_DECODE_CANDIDATES]:
         try:
             raw = base64.b64decode(blob + "=" * (-len(blob) % 4), validate=False)
@@ -255,13 +255,10 @@ def _detect_prompt_leak(output_text: str, system_text: str) -> bool:
     starts = list(range(0, last_start + 1, _LEAK_STEP))
     if starts[-1] != last_start:
         starts.append(last_start)
-    for i in starts:
-        if sys_n[i:i + _LEAK_WINDOW] in out_n:
-            return True
-    return False
+    return any(sys_n[i:i + _LEAK_WINDOW] in out_n for i in starts)
 
 
-def _extract_system_text(request: "ModelRequest") -> str:
+def _extract_system_text(request: ModelRequest) -> str:
     parts: list[str] = []
     messages = getattr(request, "messages", None) or []
     for msg in messages:
@@ -345,8 +342,8 @@ class OutputSafetyMiddleware(AgentMiddleware):
                 clean_note = f"[Tool result sanitized — safety findings: {', '.join(threat_types)}]\n" + strip_injection(text)
             try:
                 object.__setattr__(msg, "content", clean_note)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("[Safety:%s] failed to mutate ToolMessage content in place: %s", self._agent_name, exc)
 
     async def _check_user_input(self, request: ModelRequest) -> None:
         messages = getattr(request, "messages", None) or []
@@ -373,8 +370,8 @@ class OutputSafetyMiddleware(AgentMiddleware):
         ))
         try:
             messages.append(reminder)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[Safety:%s] failed to append security reminder message: %s", self._agent_name, exc)
 
     def _check_response(self, response: ModelResponse) -> ModelResponse:
         msg = response.output if hasattr(response, "output") else None
@@ -418,8 +415,8 @@ class OutputSafetyMiddleware(AgentMiddleware):
             return response._replace(output=new_msg)
         try:
             object.__setattr__(response, "output", new_msg)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[Safety:%s] failed to mutate ModelResponse output in place: %s", self._agent_name, exc)
         return response
 
     def _capture_system_text(self, request: ModelRequest) -> None:
@@ -447,8 +444,10 @@ class OutputSafetyMiddleware(AgentMiddleware):
                     clean_note = f"[Tool result sanitized — safety findings: {', '.join(threat_types)}]\n" + strip_injection(text)
                     try:
                         object.__setattr__(msg, "content", clean_note)
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug(
+                            "[Safety:%s] failed to mutate ToolMessage content in place: %s", self._agent_name, exc,
+                        )
         response = handler(request)
         return self._check_response(response)
 

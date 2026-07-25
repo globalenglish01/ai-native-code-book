@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ainative_guardrail.limits import AgentLimits, DEFAULT_RECURSION_LIMIT, DEFAULT_TOKEN_BUDGET
+from ainative_guardrail.limits import DEFAULT_RECURSION_LIMIT, DEFAULT_TOKEN_BUDGET, AgentLimits
 
 
 def test_unregistered_agent_falls_back_to_defaults():

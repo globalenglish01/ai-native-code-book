@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from ainative_mcp.audit import InMemoryToolCallAuditLog, ToolCallRecord
 
 

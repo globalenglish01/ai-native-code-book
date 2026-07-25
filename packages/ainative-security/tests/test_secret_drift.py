@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pytest
-
 from ainative_core.protocols import SecretRule
 from ainative_security.secret_drift import detect_secret_drift, run_secret_drift_check_once
 

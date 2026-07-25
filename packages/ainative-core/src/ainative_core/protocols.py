@@ -13,9 +13,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Callable, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 # ── 用量记录 ──────────────────────────────────────────────────────────────────
 

@@ -111,7 +111,7 @@ async def judge_response(
             result = await model.ainvoke(messages)
             raw_text = result.content if isinstance(result.content, str) else str(result.content)
             parsed = _parse_judge_output(raw_text)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("[judge_response] judge call %d failed: %s", i, exc)
 
         judge_calls.append({"index": i, "raw_output": raw_text, "parsed": parsed})

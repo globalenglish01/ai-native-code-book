@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from ainative_core.protocols import PromptVariant
 from ainative_prompt.store import InMemoryPromptStore, ab_select_deterministic, load_prompt
 

@@ -11,7 +11,6 @@ import asyncio
 import types
 
 import pytest
-
 from ainative_cli.templates import TEMPLATES
 
 

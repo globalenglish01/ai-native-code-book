@@ -104,7 +104,8 @@ async def main() -> None:
         return malicious_response
 
     class _FakeRequest:
-        messages: list = []
+        def __init__(self) -> None:
+            self.messages: list = []
 
     cleaned = safety_mw.wrap_model_call(_FakeRequest(), handler)
     print(f"LLM output after OutputSafetyMiddleware: {cleaned.output.content}")

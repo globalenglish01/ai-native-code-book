@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 
-__all__ = ["redact_pii_text", "COVERED_PII_TYPES"]
+__all__ = ["COVERED_PII_TYPES", "redact_pii_text"]
 
 COVERED_PII_TYPES: tuple[str, ...] = ("china_id_card", "china_mobile_phone")
 
@@ -36,13 +36,13 @@ _CHINA_ID_CARD_RE = re.compile(r"(?<!\d)\d{17}[\dXx](?![\dXx])")
 _CHINA_MOBILE_RE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
 
 
-def _mask_id_card(m: "re.Match[str]") -> str:
+def _mask_id_card(m: re.Match[str]) -> str:
     """保留前6位（地区码）+后4位，中间8位掩码——与国内常见的身份证脱敏惯例一致。"""
     s = m.group(0)
     return f"{s[:6]}********{s[-4:]}"
 
 
-def _mask_mobile(m: "re.Match[str]") -> str:
+def _mask_mobile(m: re.Match[str]) -> str:
     """保留前3位（运营商号段）+后4位，中间4位掩码——如 138****1234。"""
     s = m.group(0)
     return f"{s[:3]}****{s[-4:]}"

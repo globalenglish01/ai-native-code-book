@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 
 import pytest
-
 from ainative_cli.templates import TEMPLATES, get_template
 
 

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import pytest
-
-from ainative_core.protocols import A2ATask
 from ainative_a2a.transport import InProcessTransport
+from ainative_core.protocols import A2ATask
 
 
 def _task(capability="do_thing", sender="caller") -> A2ATask:
