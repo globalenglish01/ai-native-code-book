@@ -8,6 +8,7 @@ from ainative_core.model_factory import (
     _supports_temperature,
     build_agent_model,
     build_agent_model_with_fallback,
+    build_cheap_model,
     build_model,
     get_summarization_config,
     make_cached_system_prompt,
@@ -120,3 +121,79 @@ def test_with_usage_tracking_returns_extra_kwargs_unchanged_when_no_sink():
     original = {"timeout": 60}
     result = _with_usage_tracking(original, model_id="anthropic:claude-sonnet-4-5", usage_sink=None, agent_name="a")
     assert result is original
+
+
+def test_build_model_passes_deepseek_api_key_and_base_url(monkeypatch):
+    """DeepSeek uses the OpenAI-compatible client under init_chat_model, which
+    isn't installed in this test environment (langchain-deepseek) — patch
+    init_chat_model itself to verify build_model constructs the right kwargs
+    without needing the real provider package installed."""
+    captured = {}
+
+    def fake_init_chat_model(model_id, **kwargs):
+        captured["model_id"] = model_id
+        captured["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr("ainative_core.model_factory.init_chat_model", fake_init_chat_model)
+
+    cfg = ProviderConfig(deepseek_api_key="test-deepseek-key", deepseek_base_url="https://api.deepseek.example.com")
+    build_model("deepseek:deepseek-chat", config=cfg)
+
+    assert captured["kwargs"]["api_key"] == "test-deepseek-key"
+    assert captured["kwargs"]["base_url"] == "https://api.deepseek.example.com"
+
+
+def test_build_model_deepseek_without_base_url_omits_it(monkeypatch):
+    captured = {}
+
+    def fake_init_chat_model(model_id, **kwargs):
+        captured["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr("ainative_core.model_factory.init_chat_model", fake_init_chat_model)
+
+    cfg = ProviderConfig(deepseek_api_key="test-deepseek-key")
+    build_model("deepseek:deepseek-chat", config=cfg)
+
+    assert captured["kwargs"]["api_key"] == "test-deepseek-key"
+    assert "base_url" not in captured["kwargs"]
+
+
+def test_build_cheap_model_returns_base_chat_model():
+    cfg = ProviderConfig(anthropic_api_key="test-key")
+    model = build_cheap_model(config=cfg)
+    assert isinstance(model, BaseChatModel)
+
+
+def test_build_cheap_model_with_usage_sink_and_agent_name():
+    cfg = ProviderConfig(anthropic_api_key="test-key")
+    sink = InMemoryUsageSink()
+    model = build_cheap_model(config=cfg, usage_sink=sink, agent_name="router_agent")
+    assert isinstance(model, BaseChatModel)
+
+
+def test_build_agent_model_with_fallback_includes_deepseek_when_configured_and_language_not_ja_zh(monkeypatch):
+    """Covers the DeepSeek fallback branch in build_agent_model_with_fallback —
+    patches init_chat_model so the DeepSeek fallback can be constructed
+    without the langchain-deepseek package installed."""
+    monkeypatch.setattr(
+        "ainative_core.model_factory.init_chat_model",
+        lambda model_id, **kwargs: object(),
+    )
+    cfg = ProviderConfig(anthropic_api_key="test-key", deepseek_api_key="test-deepseek-key", preferred_language="en")
+    _primary, fallback_mw = build_agent_model_with_fallback(config=cfg)
+    assert fallback_mw is not None
+
+
+def test_build_agent_model_with_fallback_skips_deepseek_when_language_is_ja_or_zh(monkeypatch):
+    calls = []
+
+    def fake_init_chat_model(model_id, **kwargs):
+        calls.append(model_id)
+        return object()
+
+    monkeypatch.setattr("ainative_core.model_factory.init_chat_model", fake_init_chat_model)
+    cfg = ProviderConfig(anthropic_api_key="test-key", deepseek_api_key="test-deepseek-key", preferred_language="ja")
+    build_agent_model_with_fallback(config=cfg)
+    assert not any("deepseek" in c for c in calls)

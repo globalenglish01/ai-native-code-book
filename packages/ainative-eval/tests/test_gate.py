@@ -61,6 +61,16 @@ def test_maybe_recheck_boundary_skips_when_far_from_threshold():
     assert note == ""
 
 
+def test_maybe_recheck_boundary_uses_first_result_when_rescore_fails():
+    score, needs_review, note = maybe_recheck_boundary(
+        0.82, green_min=0.8, boundary_tolerance=0.05, recheck_max_diff=0.1,
+        rescore=lambda: None,
+    )
+    assert score == 0.82
+    assert needs_review is False
+    assert "recheck failed" in note
+
+
 def test_maybe_recheck_boundary_uses_conservative_value_when_consistent():
     score, needs_review, note = maybe_recheck_boundary(
         0.82, green_min=0.8, boundary_tolerance=0.05, recheck_max_diff=0.1,

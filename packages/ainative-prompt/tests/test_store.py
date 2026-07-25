@@ -70,6 +70,19 @@ def test_ab_select_deterministic_zero_traffic_falls_back_to_first():
     assert result.variant == "a"
 
 
+def test_ab_select_deterministic_always_returns_one_of_the_candidate_variants():
+    """`traffic_pct` is typed as int, so in normal use cumulative reaches
+    exactly `total` on the last variant (integer addition has no precision
+    loss) and the final `return variants[-1]` fallback is unreachable — it
+    exists purely to guard against a hypothetical float-summation edge case.
+    This just confirms the function always returns a valid variant regardless
+    of hash outcome, across many thread_ids."""
+    variants = [PromptVariant(variant=str(i), content=str(i), traffic_pct=10, version=1) for i in range(10)]
+    for i in range(200):
+        result = ab_select_deterministic(variants, f"thread-{i}")
+        assert result in variants
+
+
 def test_ab_select_deterministic_anonymous_calls_always_same_variant():
     """记录已知设计特性：thread_id为None时，所有匿名调用路由到同一固定变体。"""
     variants = [

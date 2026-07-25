@@ -41,6 +41,18 @@ def test_build_mcp_config_stdio_includes_command_and_env():
     assert entry["env"] == {"FOO": "bar"}
 
 
+def test_build_mcp_config_http_includes_headers_when_provided():
+    config = build_mcp_config(
+        "api", "http", url="http://localhost:9000", headers={"Authorization": "Bearer token"},
+    )
+    assert config["api"]["headers"] == {"Authorization": "Bearer token"}
+
+
+def test_build_mcp_config_stdio_includes_cwd_when_provided():
+    config = build_mcp_config("browser", "stdio", command="npx", cwd="/opt/mcp-servers")
+    assert config["browser"]["cwd"] == "/opt/mcp-servers"
+
+
 def test_merge_mcp_configs_combines_multiple_servers():
     a = build_mcp_config("server_a", "http", url="http://a")
     b = build_mcp_config("server_b", "http", url="http://b")

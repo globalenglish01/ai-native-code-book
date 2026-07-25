@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from ainative_prompt.judge import judge_response
+from ainative_prompt.judge import _parse_judge_output, judge_response
 
 
 class _FakeAIMessage:
@@ -22,6 +22,27 @@ class _FakeModel:
         if isinstance(response, Exception):
             raise response
         return _FakeAIMessage(response)
+
+
+def test_parse_judge_output_strips_markdown_code_fence():
+    raw = '```json\n{"score": 0.75, "reasoning": "solid"}\n```'
+    result = _parse_judge_output(raw)
+    assert result == {"score": 0.75, "reasoning": "solid"}
+
+
+def test_parse_judge_output_strips_bare_code_fence_without_json_label():
+    raw = '```\n{"score": 0.5, "reasoning": "ok"}\n```'
+    result = _parse_judge_output(raw)
+    assert result == {"score": 0.5, "reasoning": "ok"}
+
+
+def test_parse_judge_output_rejects_score_out_of_range():
+    assert _parse_judge_output('{"score": 1.5, "reasoning": "too high"}') is None
+    assert _parse_judge_output('{"score": -0.1, "reasoning": "too low"}') is None
+
+
+def test_parse_judge_output_returns_none_for_malformed_json():
+    assert _parse_judge_output("not json at all") is None
 
 
 @pytest.mark.asyncio

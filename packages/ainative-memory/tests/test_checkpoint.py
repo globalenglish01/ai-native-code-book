@@ -98,6 +98,27 @@ async def test_reset_clears_permanent_failure_and_allows_retry():
 
 
 @pytest.mark.asyncio
+async def test_concurrent_get_calls_after_permanent_failure_all_return_none():
+    """Regression/branch coverage for the double-checked-lock permanent-failure
+    check inside the lock (not just the fast-path check before acquiring it):
+    multiple concurrent get() calls racing for the lock after the first one
+    already set _permanently_failed must all return None via the in-lock
+    check, not attempt to rebuild."""
+    call_count = 0
+
+    async def always_fails():
+        nonlocal call_count
+        call_count += 1
+        await asyncio.sleep(0.01)
+        raise ImportError("psycopg not installed")
+
+    factory = CheckpointSaverFactory(always_fails)
+    results = await asyncio.gather(*(factory.get() for _ in range(10)))
+    assert all(r is None for r in results)
+    assert call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_concurrent_get_calls_only_build_once():
     call_count = 0
 

@@ -160,6 +160,15 @@ async def test_resume_does_not_rerun_already_completed_nodes():
     assert run.is_completed
 
 
+@pytest.mark.asyncio
+async def test_resume_on_a_non_paused_run_raises_value_error():
+    wf = Workflow([WorkflowNode(name="step", fn=lambda ctx: "done", output_key="out")])
+    run = await wf.run({})
+    assert run.is_completed
+    with pytest.raises(ValueError, match="not paused"):
+        await wf.resume(run)
+
+
 def test_duplicate_node_names_raise_value_error():
     with pytest.raises(ValueError, match="duplicate"):
         Workflow([
