@@ -1,0 +1,25 @@
+[project]
+name = "ainative-memory"
+version = "0.1.0"
+description = "AI Native Framework 记忆模块——checkpoint持久化协议、长期记忆存储、PII脱敏代理、摘要压缩配置"
+requires-python = ">=3.11"
+dependencies = [
+    "ainative-core",
+    "langchain-core>=0.3",
+]
+
+[tool.uv.sources]
+ainative-core = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ainative_memory"]
