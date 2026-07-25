@@ -75,6 +75,7 @@ coverage in `examples/tests/`:
 | `document_publishing_pipeline.py` | workflow, guardrail | A draft → review → publish DAG pauses instead of auto-publishing when content is too long or contains high-risk phrasing; a human approval resumes the run without re-executing the completed draft stage; each pipeline stage gets its own consecutive-error budget. |
 | `eval_harness.py` | prompt, eval | Each eval case is scored by an ensemble of independent LLM-judge calls (median score, disagreement flagged as `high_uncertainty`); a deployment gate blocks the whole suite if any single case's judges disagreed too much, even when the average score looks fine. |
 | `devops_shell_agent.py` | security, mcp | Diagnostic shell command output (log tails, config dumps) is scanned before it re-enters the agent's context; a leaked API key or database URL gets redacted; every command is audited, and previously-redacted calls can be pulled up for a security review. |
+| `structured_extraction_agent.py` | guardrail, eval | Extracting structured fields (vendor/amount/date) from a document retries with the specific validation errors fed back into the next attempt, capped at a per-task-type retry budget; a filing gate blocks auto-filing extractions that never converged on valid output. |
 
 ```bash
 uv run python examples/products/customer_support_bot.py
@@ -88,6 +89,7 @@ uv run python examples/products/agent_plugin_marketplace.py
 uv run python examples/products/document_publishing_pipeline.py
 uv run python examples/products/eval_harness.py
 uv run python examples/products/devops_shell_agent.py
+uv run python examples/products/structured_extraction_agent.py
 ```
 
 ## Status
