@@ -45,7 +45,8 @@ AI Native system:
 
 ```bash
 uv sync
-uv run pytest packages/
+uv run ruff check packages/ examples/
+uv run pytest packages/ examples/tests
 uv run python examples/quickstart.py       # core + guardrail + prompt + security + eval
 uv run python examples/quickstart_v2.py    # memory + mcp + workflow + a2a + cli
 uv run python -m ainative_cli.main new my-app --type customer-service
@@ -54,6 +55,28 @@ uv run python -m ainative_cli.main new my-app --type customer-service
 Available `ainative new --type` values: `customer-service`, `browser-agent`,
 `multi-agent`, `minimal` (run `ainative-cli`'s `list-types` command to see
 descriptions and package sets).
+
+## Example products
+
+`examples/products/` contains fuller, more realistic integrations than the
+CLI's starter templates — each one is a runnable script with real pytest
+coverage in `examples/tests/`:
+
+| Example | Packages combined | What it demonstrates |
+|---|---|---|
+| `customer_support_bot.py` | guardrail, prompt, security, memory, eval | Multi-turn chat, PII redacted before storage, secret-leak in a reply auto-redacted, deployment gate. |
+| `rag_qa_assistant.py` | memory, security | Retrieval context capped by token budget (not left unbounded — a documented real anti-pattern), a poisoned retrieved document's injection phrase stripped from the final answer. |
+| `code_review_assistant.py` | workflow, security, eval | DAG pipeline (static analysis → LLM review → safety scan); a failed static-analysis stage skips the (costly) LLM stage entirely; a manipulated "fix suggestion" containing a destructive shell command gets sanitized before reaching the human reviewer. |
+| `research_team.py` | a2a, workflow | Orchestrator delegates `research` and `fact_check` to separate agents via capability discovery; pipeline pauses for human sign-off (HITL) when fact-checking flags an unverified claim. |
+| `browser_task_agent.py` | guardrail, mcp | A stuck browser-automation loop (repeated `browser_snapshot` with no progress) gets short-circuited by the stall guard; per-tool call caps enforced; every call (including blocked ones) recorded in the audit log. |
+
+```bash
+uv run python examples/products/customer_support_bot.py
+uv run python examples/products/rag_qa_assistant.py
+uv run python examples/products/code_review_assistant.py
+uv run python examples/products/browser_task_agent.py
+uv run python examples/products/research_team.py
+```
 
 ## Status
 

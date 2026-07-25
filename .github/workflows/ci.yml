@@ -32,11 +32,19 @@ jobs:
       - name: Lint with ruff
         run: uv run --python ${{ matrix.python-version }} ruff check packages/ examples/
 
-      - name: Run full test suite
-        run: uv run --python ${{ matrix.python-version }} pytest packages/ -v
+      - name: Run full test suite (packages + product examples)
+        run: uv run --python ${{ matrix.python-version }} pytest packages/ examples/tests -v
 
       - name: Run quickstart examples (batch 1)
         run: uv run --python ${{ matrix.python-version }} python examples/quickstart.py
 
       - name: Run quickstart examples (batch 2)
         run: uv run --python ${{ matrix.python-version }} python examples/quickstart_v2.py
+
+      - name: Run product examples end-to-end
+        run: |
+          uv run --python ${{ matrix.python-version }} python examples/products/customer_support_bot.py
+          uv run --python ${{ matrix.python-version }} python examples/products/rag_qa_assistant.py
+          uv run --python ${{ matrix.python-version }} python examples/products/code_review_assistant.py
+          uv run --python ${{ matrix.python-version }} python examples/products/browser_task_agent.py
+          uv run --python ${{ matrix.python-version }} python examples/products/research_team.py

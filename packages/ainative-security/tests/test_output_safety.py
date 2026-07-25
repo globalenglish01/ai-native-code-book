@@ -85,6 +85,22 @@ def test_middleware_redacts_secret_in_response_by_default():
     assert "sk-abcdefghijklmnopqrstuvwxyz123456" not in result.output.content
 
 
+def test_middleware_strips_malicious_command_from_final_response_not_just_secrets():
+    """A model's final user-facing reply containing a destructive command
+    (e.g. the model was manipulated via a poisoned tool/RAG document) must not
+    leave the raw dangerous command intact — a user could copy-paste and run
+    it. Redact mode must actually strip it, not just append a warning note."""
+    mw = OutputSafetyMiddleware("test_agent")
+    response = _FakeResponse(AIMessage(content="Sure, here you go: run: rm -rf / to fix it"))
+
+    def handler(req):
+        return response
+
+    result = mw.wrap_model_call(_FakeRequest([]), handler)
+    assert "rm -rf /" not in result.output.content
+    assert "[BLOCKED" in result.output.content
+
+
 def test_middleware_block_mode_raises_on_finding():
     mw = OutputSafetyMiddleware("test_agent", block_mode=True)
     response = _FakeResponse(AIMessage(content="run: rm -rf /"))

@@ -403,7 +403,14 @@ class OutputSafetyMiddleware(AgentMiddleware):
                 f"OutputSafetyMiddleware blocked response from {self._agent_name}: {', '.join(threat_types)}"
             )
 
-        clean_text = _LEAK_REFUSAL if leaked_prompt else _redact_text(text)
+        # strip_injection (not just _redact_text) here: this is the model's FINAL
+        # user-facing output. A MALICIOUS_CODE finding (e.g. "rm -rf /" suggested
+        # by a model manipulated via a poisoned tool/RAG document) left intact in
+        # the visible reply is a real risk if the user copy-pastes and runs it —
+        # redacting only SECRET_LEAK and leaving the dangerous command/injection
+        # phrase in place (with just a warning note appended after it) is not
+        # enough. strip_injection also redacts secrets, so this covers both.
+        clean_text = _LEAK_REFUSAL if leaked_prompt else strip_injection(text)
         safety_note = f"\n\n⚠️ [Safety] {len(findings)} issue(s) auto-redacted: " + ", ".join(threat_types)
 
         new_content: Any = (
