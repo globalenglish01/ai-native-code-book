@@ -71,6 +71,7 @@ coverage in `examples/tests/`:
 | `browser_task_agent.py` | guardrail, mcp | A stuck browser-automation loop (repeated `browser_snapshot` with no progress) gets short-circuited by the stall guard; per-tool call caps enforced; every call (including blocked ones) recorded in the audit log. |
 | `content_moderation_pipeline.py` | security, eval | UGC pipeline: PII redacted before storage, a leaked secret in submitted content routes to human review instead of auto-publishing, a deployment gate blocks release while the moderation service's own API key/webhook secret are still at their insecure defaults. |
 | `personal_assistant_with_memory.py` | memory, prompt | Facts learned in one session are recalled by thread ID in a later session; conversation history is trimmed to a token budget instead of growing unbounded; a user's "forget me" request deletes all of their long-term memory without touching other users'. |
+| `agent_plugin_marketplace.py` | a2a, mcp, eval | A coordinator delegates tasks to plugin agents discovered by capability; every plugin call is audited; a deployment gate blocks a plugin whose historical error rate is too high; cyclic delegation is rejected instead of looping forever. |
 
 ```bash
 uv run python examples/products/customer_support_bot.py
@@ -80,6 +81,7 @@ uv run python examples/products/browser_task_agent.py
 uv run python examples/products/research_team.py
 uv run python examples/products/content_moderation_pipeline.py
 uv run python examples/products/personal_assistant_with_memory.py
+uv run python examples/products/agent_plugin_marketplace.py
 ```
 
 ## Status
