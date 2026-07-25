@@ -49,7 +49,7 @@ _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("aws_key", re.compile(r'(?i)(AKIA[0-9A-Z]{16})')),
     ("private_key", re.compile(r'-----BEGIN (?:RSA |EC )?PRIVATE KEY-----')),
     ("password", re.compile(r'(?i)(password|passwd|pwd)\s*[:=]\s*["\']?([^\s"\']{8,})["\']?')),
-    ("db_url", re.compile(r'(?i)(postgresql|mysql|mongodb)\+?[a-z]*://[^\s]+')),
+    ("db_url", re.compile(r'(?i)(postgres(?:ql)?|mysql|mongodb)\+?[a-z]*://[^\s]+')),
 ]
 
 _MALICIOUS_CODE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [

@@ -53,3 +53,4 @@ jobs:
           uv run --python ${{ matrix.python-version }} python examples/products/agent_plugin_marketplace.py
           uv run --python ${{ matrix.python-version }} python examples/products/document_publishing_pipeline.py
           uv run --python ${{ matrix.python-version }} python examples/products/eval_harness.py
+          uv run --python ${{ matrix.python-version }} python examples/products/devops_shell_agent.py
