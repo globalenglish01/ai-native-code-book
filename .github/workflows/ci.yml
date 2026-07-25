@@ -51,3 +51,4 @@ jobs:
           uv run --python ${{ matrix.python-version }} python examples/products/content_moderation_pipeline.py
           uv run --python ${{ matrix.python-version }} python examples/products/personal_assistant_with_memory.py
           uv run --python ${{ matrix.python-version }} python examples/products/agent_plugin_marketplace.py
+          uv run --python ${{ matrix.python-version }} python examples/products/document_publishing_pipeline.py
