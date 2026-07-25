@@ -70,3 +70,5 @@ ignore = [
 # 测试fixture里的"jwt_secret"/"changeme"是用来验证secret_drift检测逻辑的
 # 假配置值，不是真实密钥。
 "packages/ainative-security/tests/test_secret_drift.py" = ["S105", "S106"]
+"examples/products/content_moderation_pipeline.py" = ["S105"]
+"examples/tests/test_content_moderation_pipeline.py" = ["S105", "S106"]

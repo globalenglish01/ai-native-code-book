@@ -69,6 +69,8 @@ coverage in `examples/tests/`:
 | `code_review_assistant.py` | workflow, security, eval | DAG pipeline (static analysis → LLM review → safety scan); a failed static-analysis stage skips the (costly) LLM stage entirely; a manipulated "fix suggestion" containing a destructive shell command gets sanitized before reaching the human reviewer. |
 | `research_team.py` | a2a, workflow | Orchestrator delegates `research` and `fact_check` to separate agents via capability discovery; pipeline pauses for human sign-off (HITL) when fact-checking flags an unverified claim. |
 | `browser_task_agent.py` | guardrail, mcp | A stuck browser-automation loop (repeated `browser_snapshot` with no progress) gets short-circuited by the stall guard; per-tool call caps enforced; every call (including blocked ones) recorded in the audit log. |
+| `content_moderation_pipeline.py` | security, eval | UGC pipeline: PII redacted before storage, a leaked secret in submitted content routes to human review instead of auto-publishing, a deployment gate blocks release while the moderation service's own API key/webhook secret are still at their insecure defaults. |
+| `personal_assistant_with_memory.py` | memory, prompt | Facts learned in one session are recalled by thread ID in a later session; conversation history is trimmed to a token budget instead of growing unbounded; a user's "forget me" request deletes all of their long-term memory without touching other users'. |
 
 ```bash
 uv run python examples/products/customer_support_bot.py
@@ -76,6 +78,8 @@ uv run python examples/products/rag_qa_assistant.py
 uv run python examples/products/code_review_assistant.py
 uv run python examples/products/browser_task_agent.py
 uv run python examples/products/research_team.py
+uv run python examples/products/content_moderation_pipeline.py
+uv run python examples/products/personal_assistant_with_memory.py
 ```
 
 ## Status

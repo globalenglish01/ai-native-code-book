@@ -48,3 +48,5 @@ jobs:
           uv run --python ${{ matrix.python-version }} python examples/products/code_review_assistant.py
           uv run --python ${{ matrix.python-version }} python examples/products/browser_task_agent.py
           uv run --python ${{ matrix.python-version }} python examples/products/research_team.py
+          uv run --python ${{ matrix.python-version }} python examples/products/content_moderation_pipeline.py
+          uv run --python ${{ matrix.python-version }} python examples/products/personal_assistant_with_memory.py
