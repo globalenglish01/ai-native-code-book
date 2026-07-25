@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ainative_security import pii_redaction
 from ainative_security.pii_redaction import redact_pii_text
 
 
@@ -40,3 +41,16 @@ def test_id_card_adjacent_to_cjk_characters_is_detected():
     text = "号是310101199001011234号"
     result = redact_pii_text(text)
     assert "310101199001011234" not in result
+
+
+def test_returns_original_text_if_regex_substitution_unexpectedly_raises(monkeypatch):
+    """redact_pii_text必须绝不抛异常——即使底层正则替换本身出问题，也要原样
+    返回输入文本，而不是让调用方的持久化/日志流程被中断。"""
+
+    class _BrokenPattern:
+        def sub(self, *args, **kwargs):
+            raise RuntimeError("simulated regex engine failure")
+
+    monkeypatch.setattr(pii_redaction, "_CHINA_ID_CARD_RE", _BrokenPattern())
+    text = "phone 13812345678"
+    assert redact_pii_text(text) == text
