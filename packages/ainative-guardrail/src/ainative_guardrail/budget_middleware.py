@@ -123,12 +123,17 @@ class MCPCallLimiterMiddleware(AgentMiddleware):
         return self._per_tool_limit.get(name, self._default_limit)
 
     def status(self) -> dict[str, Any]:
-        """只读状态快照：各工具 count/limit 的最大占比。"""
+        """只读状态快照：各工具 count/limit 的最大占比。
+
+        用`limit is not None`而不是`if limit:`判断——`limit=0`是"这个工具
+        一次都不允许调用"的合法配置（不是"不限"），用真值判断会把它当作
+        `None`一样跳过，导致一个已经被完全拦截的工具在这份快照里完全不可见。
+        """
         worst_tool, max_ratio = "", 0.0
         for name, count in self._counters.items():
             limit = self._limit_for(name)
-            if limit:
-                ratio = count / limit
+            if limit is not None:
+                ratio = count / limit if limit > 0 else float("inf")
                 if ratio > max_ratio:
                     max_ratio, worst_tool = ratio, name
         return {"counters": dict(self._counters), "max_ratio": max_ratio, "worst_tool": worst_tool}
