@@ -1,18 +1,18 @@
-"""`protocols.py` 里各 Protocol 的内存版默认实现。
+"""`UsageSink` 协议的内存版默认实现。
 
-这些实现的存在意义是——脱离任何真实数据库/中间件，也能让上层模块
-（ainative-guardrail/ainative-prompt/ainative-security/ainative-eval）
-独立跑通demo和单元测试。生产环境不建议直接用这些实现（进程重启数据即丢失），
-应该实现 `protocols.py` 里对应的 Protocol，接自己的 Postgres/Redis/MongoDB。
+配合`ainative_core.usage_tracking.UsageTrackingCallbackHandler`使用——
+`build_model`/`build_agent_model`等工厂函数接受一个可选的`usage_sink`
+参数，传入`InMemoryUsageSink`实例即可脱离任何真实数据库直接跑通
+用量统计的demo和测试。
+
+`PromptStore`协议的内存版默认实现在`ainative_prompt.store.InMemoryPromptStore`
+（更贴近实际使用场景：与`load_prompt()`/`ab_select_deterministic()`等
+Prompt管理逻辑放在同一个包里），不在这里重复实现。
 """
 
 from __future__ import annotations
 
-import time
-from dataclasses import dataclass, field
 from typing import Any
-
-from ainative_core.protocols import PromptVariant
 
 
 class InMemoryUsageSink:
@@ -37,39 +37,11 @@ class InMemoryUsageSink:
             total += event.get("output_tokens", 0) or 0
         return total
 
-
-@dataclass
-class _StickyRecord:
-    variant: str
-    decided_at: float = field(default_factory=time.time)
-
-
-class InMemoryPromptStore:
-    """`PromptStore` 的内存版实现——用普通dict存变体和粘性路由决策。"""
-
-    def __init__(self) -> None:
-        self._variants: dict[tuple[str, str], dict[str, PromptVariant]] = {}
-        self._sticky: dict[tuple[str, str, str], _StickyRecord] = {}
-
-    async def get_active_variants(
-        self, agent_name: str, prompt_key: str
-    ) -> list[PromptVariant]:
-        bucket = self._variants.get((agent_name, prompt_key), {})
-        return [v for v in bucket.values() if v.is_active]
-
-    async def get_sticky_decision(
-        self, agent_name: str, prompt_key: str, thread_id: str
-    ) -> str | None:
-        record = self._sticky.get((agent_name, prompt_key, thread_id))
-        return record.variant if record is not None else None
-
-    async def record_decision(
-        self, agent_name: str, prompt_key: str, thread_id: str, variant: str
-    ) -> None:
-        self._sticky[(agent_name, prompt_key, thread_id)] = _StickyRecord(variant=variant)
-
-    async def save_variant(
-        self, agent_name: str, prompt_key: str, variant: PromptVariant
-    ) -> None:
-        bucket = self._variants.setdefault((agent_name, prompt_key), {})
-        bucket[variant.variant] = variant
+    def total_for_agent(self, agent_name: str) -> int:
+        """按`agent_name`过滤后再累加——用于统计某个具体agent的用量。"""
+        total = 0
+        for event in self._events:
+            if event.get("agent_name") == agent_name:
+                total += event.get("input_tokens", 0) or 0
+                total += event.get("output_tokens", 0) or 0
+        return total

@@ -1,0 +1,12 @@
+[run]
+source =
+    packages/ainative-core/src
+    packages/ainative-guardrail/src
+    packages/ainative-prompt/src
+    packages/ainative-security/src
+    packages/ainative-eval/src
+    packages/ainative-memory/src
+    packages/ainative-mcp/src
+    packages/ainative-workflow/src
+    packages/ainative-a2a/src
+    packages/ainative-cli/src

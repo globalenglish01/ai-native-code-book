@@ -33,7 +33,7 @@ jobs:
         run: uv run --python ${{ matrix.python-version }} ruff check packages/ examples/
 
       - name: Run full test suite (packages + product examples)
-        run: uv run --python ${{ matrix.python-version }} pytest packages/ examples/tests -v
+        run: uv run --python ${{ matrix.python-version }} pytest packages/ examples/tests -v --cov --cov-report=term-missing
 
       - name: Run quickstart examples (batch 1)
         run: uv run --python ${{ matrix.python-version }} python examples/quickstart.py

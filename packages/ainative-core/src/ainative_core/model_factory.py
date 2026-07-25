@@ -29,6 +29,8 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import SystemMessage
 
 from ainative_core.config import ProviderConfig
+from ainative_core.protocols import UsageSink
+from ainative_core.usage_tracking import UsageTrackingCallbackHandler
 
 STRUCTURED_AGENT_TEMPERATURE = 0.2
 DETERMINISTIC_TEMPERATURE = 0.0
@@ -72,17 +74,42 @@ def _provider_of(model_id: str) -> ModelProvider:
         return ModelProvider.AUTO
 
 
+def _with_usage_tracking(
+    extra_kwargs: dict[str, Any] | None,
+    *,
+    model_id: str,
+    usage_sink: UsageSink | None,
+    agent_name: str,
+) -> dict[str, Any] | None:
+    """如果传了`usage_sink`，在`extra_kwargs["callbacks"]`里追加一个用量采集回调
+    （保留调用方自己可能已经传入的其他callbacks，不覆盖）。"""
+    if usage_sink is None:
+        return extra_kwargs
+    kwargs = dict(extra_kwargs) if extra_kwargs else {}
+    handler = UsageTrackingCallbackHandler(
+        usage_sink, agent_name=agent_name, provider=_provider_of(model_id).value, model_id=model_id,
+    )
+    kwargs["callbacks"] = [*kwargs.get("callbacks", []), handler]
+    return kwargs
+
+
 def build_model(
     model_id: str,
     *,
     config: ProviderConfig | None = None,
     temperature: float = STRUCTURED_AGENT_TEMPERATURE,
     extra_kwargs: dict[str, Any] | None = None,
+    usage_sink: UsageSink | None = None,
+    agent_name: str = "unknown",
 ) -> BaseChatModel:
     """构建单个`BaseChatModel`，不含降级逻辑。
 
     `config`留空时从环境变量构造——这是大多数demo/测试场景的默认用法；
     真实项目如果有自己的配置系统，在启动时构造一次`ProviderConfig`传进来即可。
+
+    `usage_sink`不为空时，会通过`callbacks`参数（而不是`model.with_config()`——
+    后者返回`RunnableBinding`会破坏`BaseChatModel`类型不变量）挂一个用量采集
+    回调，每次调用结束后自动把token用量记进`usage_sink`。
     """
     cfg = config or ProviderConfig.from_env()
     kwargs: dict[str, Any] = dict(temperature_kwargs(model_id, temperature))
@@ -98,6 +125,7 @@ def build_model(
         if cfg.deepseek_base_url:
             kwargs["base_url"] = cfg.deepseek_base_url
 
+    extra_kwargs = _with_usage_tracking(extra_kwargs, model_id=model_id, usage_sink=usage_sink, agent_name=agent_name)
     if extra_kwargs:
         kwargs.update(extra_kwargs)
 
@@ -105,7 +133,11 @@ def build_model(
 
 
 def build_cheap_model(
-    *, config: ProviderConfig | None = None, extra_kwargs: dict[str, Any] | None = None
+    *,
+    config: ProviderConfig | None = None,
+    extra_kwargs: dict[str, Any] | None = None,
+    usage_sink: UsageSink | None = None,
+    agent_name: str = "unknown",
 ) -> BaseChatModel:
     """构建"便宜/快速"档模型，供路由类中间件在低风险场景下降级使用。"""
     cfg = config or ProviderConfig.from_env()
@@ -114,6 +146,8 @@ def build_cheap_model(
         config=cfg,
         temperature=STRUCTURED_AGENT_TEMPERATURE,
         extra_kwargs=extra_kwargs,
+        usage_sink=usage_sink,
+        agent_name=agent_name,
     )
 
 
@@ -122,6 +156,8 @@ def build_agent_model(
     config: ProviderConfig | None = None,
     model_id: str | None = None,
     temperature: float = STRUCTURED_AGENT_TEMPERATURE,
+    usage_sink: UsageSink | None = None,
+    agent_name: str = "unknown",
 ) -> BaseChatModel:
     """构建主力Agent模型，超时/重试走LangChain默认的`init_chat_model`参数。"""
     cfg = config or ProviderConfig.from_env()
@@ -131,11 +167,17 @@ def build_agent_model(
         config=cfg,
         temperature=temperature,
         extra_kwargs={"timeout": 120, "max_retries": 1},
+        usage_sink=usage_sink,
+        agent_name=agent_name,
     )
 
 
 def build_agent_model_with_fallback(
-    *, config: ProviderConfig | None = None, model_id: str | None = None
+    *,
+    config: ProviderConfig | None = None,
+    model_id: str | None = None,
+    usage_sink: UsageSink | None = None,
+    agent_name: str = "unknown",
 ) -> tuple[BaseChatModel, ModelFallbackMiddleware | None]:
     """构建主力模型 + 跨厂商自动降级用的`ModelFallbackMiddleware`。
 
@@ -148,15 +190,21 @@ def build_agent_model_with_fallback(
 
     返回`(primary, None)`表示没有配置任何备用供应商凭证——调用方应该
     据此决定是否要把`fallback_mw`加进middleware列表。
+
+    `usage_sink`提供时，主力模型和每一个备用模型都会各自挂上用量采集回调
+    ——降级发生时，实际执行调用的备用模型的用量同样会被记录，不会因为
+    降级而在用量统计里"消失"。
     """
     cfg = config or ProviderConfig.from_env()
-    primary = build_agent_model(config=cfg, model_id=model_id)
+    primary = build_agent_model(config=cfg, model_id=model_id, usage_sink=usage_sink, agent_name=agent_name)
 
     fallbacks: list[BaseChatModel] = []
     if cfg.openai_api_key:
-        fallbacks.append(build_model("openai:gpt-4o", config=cfg))
+        fallbacks.append(build_model("openai:gpt-4o", config=cfg, usage_sink=usage_sink, agent_name=agent_name))
     if cfg.deepseek_api_key and cfg.preferred_language not in ("ja", "zh"):
-        fallbacks.append(build_model("deepseek:deepseek-chat", config=cfg))
+        fallbacks.append(
+            build_model("deepseek:deepseek-chat", config=cfg, usage_sink=usage_sink, agent_name=agent_name)
+        )
 
     if not fallbacks:
         return primary, None

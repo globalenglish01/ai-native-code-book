@@ -93,10 +93,9 @@ class PromptVariant:
 class PromptStore(Protocol):
     """Prompt版本管理+A/B分流所需要的最小存储接口。
 
-    真实项目里通常用一张数据库表实现；本包默认提供
-    `InMemoryPromptStore`（见 `memory_backends.py`），用普通dict存储，
-    足以支撑demo和单元测试，但不适合当作生产环境的最终存储（进程重启
-    数据即丢失）。
+    真实项目里通常用一张数据库表实现；`ainative_prompt.store.InMemoryPromptStore`
+    提供了一份内存版实现，用普通dict存储，足以支撑demo和单元测试，但不适合
+    当作生产环境的最终存储（进程重启数据即丢失）。
     """
 
     async def get_active_variants(
