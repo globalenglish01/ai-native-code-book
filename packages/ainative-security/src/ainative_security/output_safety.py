@@ -46,8 +46,8 @@ logger = logging.getLogger(__name__)
 _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("api_key", re.compile(r'(?i)(api[_\-]?key|apikey)\s*[:=]\s*["\']?([A-Za-z0-9_\-]{20,})["\']?')),
     ("bearer_token", re.compile(r'(?i)bearer\s+([A-Za-z0-9\-._~+/]{20,})')),
-    ("aws_key", re.compile(r'(?i)(AKIA[0-9A-Z]{16})')),
-    ("private_key", re.compile(r'-----BEGIN (?:RSA |EC )?PRIVATE KEY-----')),
+    ("aws_key", re.compile(r'(?i)((?:AKIA|ASIA)[0-9A-Z]{16})')),
+    ("private_key", re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----')),
     ("password", re.compile(r'(?i)(password|passwd|pwd)\s*[:=]\s*["\']?([^\s"\']{8,})["\']?')),
     ("db_url", re.compile(r'(?i)(postgres(?:ql)?|mysql|mongodb)\+?[a-z]*://[^\s]+')),
 ]
