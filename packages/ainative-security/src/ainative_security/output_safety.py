@@ -53,28 +53,36 @@ _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 _MALICIOUS_CODE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("rm_rf", re.compile(r'\brm\s+-[rRfF]{1,4}\s+[/~]')),
+    ("rm_rf", re.compile(r'\brm\s+(?:-[rRfF]{1,4}|--recursive\s+--force|--force\s+--recursive)\s+[/~]')),
     ("drop_table", re.compile(r'(?i)\bDROP\s+TABLE\b')),
     ("drop_db", re.compile(r'(?i)\bDROP\s+DATABASE\b')),
     ("truncate_table", re.compile(r'(?i)\bTRUNCATE\s+TABLE\b')),
     ("insert_select", re.compile(r'(?i)\bINSERT\s+INTO\b[^;]{0,200}\bSELECT\b')),
     ("format_disk", re.compile(r'(?i)\b(mkfs|format\s+[A-Z]:)\b')),
-    ("curl_pipe_sh", re.compile(r'(?i)curl\s+[^\|]+\|\s*(?:ba)?sh')),
-    ("wget_exec", re.compile(r'(?i)wget\s+[^\|]+\|\s*(?:ba)?sh')),
-    ("fork_bomb", re.compile(r':\(\)\s*\{.*:\|:&.*\}')),
+    ("curl_pipe_sh", re.compile(r'(?i)curl\s+[^\|]+\|\s*(?:sudo\s+)?(?:ba)?sh\b')),
+    ("wget_exec", re.compile(r'(?i)wget\s+[^\|]+\|\s*(?:sudo\s+)?(?:ba)?sh\b')),
+    ("fork_bomb", re.compile(r':\s*\(\)\s*\{.*:\|:&.*\}')),
 ]
 
 _INJECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("ignore_instr", re.compile(r'(?i)ignore\s+(all\s+)?(previous|prior|above)\s+instructions?')),
+    ("ignore_instr", re.compile(
+        r'(?i)(?:ignore|disregard|forget)\s+(?:all\s+|everything\s+)?'
+        r'(?:(?:previous|prior|above)\s+instructions?|above\b'
+        r'|what\s+(?:i\s+|you\s+were\s+)?(?:told|said)(?:\s+you)?(?:\s+before)?)'
+    )),
     ("system_override", re.compile(r'(?i)\[SYSTEM\]|\[INST\]|\<\|system\|\>')),
     ("role_switch", re.compile(r'(?i)you\s+are\s+now\s+(a\s+)?(different|new|evil|jailbreak)')),
-    ("ignore_rules", re.compile(r'(?i)(disregard|forget|bypass)\s+(your\s+)?(rules|guidelines|constraints)')),
+    ("ignore_rules", re.compile(r'(?i)(disregard|forget|bypass)\s+(your\s+|the\s+)?(rules|guidelines|constraints|above)')),
     ("sql_union", re.compile(r'(?i)\bUNION\s+(?:ALL\s+)?SELECT\b')),
-    ("sql_or_tautology", re.compile(r"(?i)'\s*OR\s+'?1'?\s*=\s*'?1|OR\s+1\s*=\s*1")),
+    ("sql_or_tautology", re.compile(
+        r"(?i)'\s*OR\s+'?1'?\s*=\s*'?1|OR\s+1\s*=\s*1"
+        r"|'\s*OR\s+'([^']*)'\s*=\s*'\1'"
+        r"|'\s*--"
+    )),
     ("sql_comment_drop", re.compile(r"(?i)';\s*(?:DROP|DELETE|UPDATE|INSERT|TRUNCATE)\b|;\s*--\s*$", re.MULTILINE)),
     ("sql_data_exfil", re.compile(r'(?i)\b(SELECT\s+\*\s+FROM\s+\w|LOAD_FILE\s*\(|INTO\s+OUTFILE\b)')),
     ("xss_script", re.compile(r'(?i)<script[\s>].*?</script\s*>', re.DOTALL)),
-    ("xss_event", re.compile(r'(?i)\bon(?:error|load|click|mouseover|focus)\s*=')),
+    ("xss_event", re.compile(r'(?i)\bon[a-z]{3,20}\s*=')),
     ("xss_javascript", re.compile(r'(?i)javascript\s*:[^\s]')),
 ]
 
