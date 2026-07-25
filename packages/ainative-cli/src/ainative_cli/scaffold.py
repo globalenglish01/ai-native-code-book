@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ainative_cli.templates import ProjectTemplate
 
+_VALID_PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+"""与PyPI包名规则一致的安全字符集——`project_name`会被原样拼进生成的
+`pyproject.toml`（TOML字符串字面量）和`README.md`里，不做校验的话，
+一个含双引号/换行符的项目名会生成语法错误、`uv sync`直接失败的
+`pyproject.toml`（已用真实输入复现过）。"""
+
 
 class ProjectAlreadyExistsError(Exception):
     """目标目录已存在且非空时抛出——防止意外覆盖用户已有的工作。"""
+
+
+class InvalidProjectNameError(ValueError):
+    """`project_name`包含会破坏生成文件格式的字符时抛出。"""
 
 
 def render_pyproject_toml(project_name: str, template: ProjectTemplate) -> str:
@@ -59,8 +70,16 @@ def scaffold_project(target_dir: Path, project_name: str, template: ProjectTempl
             默认False——防止意外覆盖用户已有的工作。
 
     Raises:
+        InvalidProjectNameError: `project_name`包含字母/数字/`.`/`_`/`-`以外的字符
+            （这些字符原样拼进生成的TOML/Markdown文件，不安全的字符会破坏格式）。
         ProjectAlreadyExistsError: `target_dir`已存在且非空，且`force=False`。
     """
+    if not _VALID_PROJECT_NAME_RE.match(project_name):
+        raise InvalidProjectNameError(
+            f"invalid project name '{project_name}': must start with a letter or digit and "
+            f"contain only letters, digits, '.', '_', or '-'"
+        )
+
     if target_dir.exists() and any(target_dir.iterdir()) and not force:
         raise ProjectAlreadyExistsError(
             f"target directory '{target_dir}' already exists and is not empty; pass force=True to overwrite"

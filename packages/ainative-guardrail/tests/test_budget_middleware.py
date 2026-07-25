@@ -140,6 +140,20 @@ def test_token_counter_does_not_inflate_from_early_unmetered_message():
     assert result == 3000
 
 
+def test_token_counter_current_total_matches_count_result():
+    counter = TokenCounter()
+    counter.count([HumanMessage(content="x" * 400)])
+    assert counter.current_total == 100
+    assert counter.last_known_cumulative == 0  # no usage_metadata seen yet
+
+
+def test_token_counter_current_total_after_real_cumulative_seen():
+    counter = TokenCounter()
+    counter.count([AIMessage(content="reply", usage_metadata={"input_tokens": 500, "output_tokens": 1, "total_tokens": 501})])
+    assert counter.current_total == 500
+    assert counter.last_known_cumulative == 500
+
+
 def test_token_budget_middleware_short_circuits_when_exhausted():
     mw = TokenBudgetMiddleware(max_total_input_tokens=100)
 
@@ -158,3 +172,18 @@ def test_token_budget_middleware_passes_through_when_under_budget():
 
     response = mw.wrap_model_call(_FakeRequest(), lambda r: "handled")
     assert response == "handled"
+
+
+def test_token_budget_middleware_status_reflects_estimated_increment_not_just_real_cumulative():
+    """Regression test: status() must report the same total _check() uses to
+    decide whether to short-circuit — before the fix, status() only reported
+    TokenCounter.last_known_cumulative (the real usage_metadata-derived value,
+    0 until an AIMessage with usage_metadata is seen), silently dropping the
+    character-count-estimated portion and under-reporting actual usage."""
+    mw = TokenBudgetMiddleware(max_total_input_tokens=1000)
+
+    class _FakeRequest:
+        messages = [HumanMessage(content="x" * 400)]  # no usage_metadata -> 100 estimated tokens
+
+    mw.wrap_model_call(_FakeRequest(), lambda r: "handled")
+    assert mw.status()["spent"] == 100

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import tomllib
+
 import pytest
-from ainative_cli.scaffold import ProjectAlreadyExistsError, scaffold_project
+from ainative_cli.scaffold import InvalidProjectNameError, ProjectAlreadyExistsError, scaffold_project
 from ainative_cli.templates import get_template
 
 
@@ -65,4 +67,26 @@ def test_scaffold_project_into_empty_existing_directory_does_not_raise(tmp_path)
     target.mkdir()  # exists but empty
 
     written = scaffold_project(target, "my_project", get_template("minimal"))
+    assert len(written) == 4
+
+
+def test_generated_pyproject_toml_is_valid_toml(tmp_path):
+    """Regression test: without project_name validation, names containing
+    characters like `"` produce a pyproject.toml that fails to parse."""
+    target = tmp_path / "my_project"
+    scaffold_project(target, "my_project", get_template("minimal"))
+    content = (target / "pyproject.toml").read_text(encoding="utf-8")
+    parsed = tomllib.loads(content)  # raises tomllib.TOMLDecodeError if malformed
+    assert parsed["project"]["name"] == "my_project"
+
+
+@pytest.mark.parametrize("bad_name", ['my"project', "my\nproject", "my\\project", "", "-leading-dash"])
+def test_scaffold_project_rejects_names_that_would_corrupt_generated_files(tmp_path, bad_name):
+    with pytest.raises(InvalidProjectNameError):
+        scaffold_project(tmp_path / "target", bad_name, get_template("minimal"))
+
+
+@pytest.mark.parametrize("good_name", ["my-project", "my_project", "my.project", "MyProject123"])
+def test_scaffold_project_accepts_conventional_project_names(tmp_path, good_name):
+    written = scaffold_project(tmp_path / good_name, good_name, get_template("minimal"))
     assert len(written) == 4

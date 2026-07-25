@@ -53,8 +53,21 @@ class TokenCounter:
 
     @property
     def last_known_cumulative(self) -> int:
-        """最近一次从`usage_metadata`拿到的真实累计输入token数（不含估算增量）。"""
+        """最近一次从`usage_metadata`拿到的真实累计输入token数（不含估算增量）。
+
+        注意：这**不是**当前总计——如果自上次真实累计值之后又有新消息只经过
+        了字符数估算（还没有反映在任何`usage_metadata`里），这部分不计入这个
+        属性。需要"当前最佳估计总量"（与`count()`用于短路判定的口径一致）时，
+        用`current_total`。
+        """
         return self._last_known_cumulative
+
+    @property
+    def current_total(self) -> int:
+        """当前最佳估计的总token数（真实累计值 + 尚未被真实值覆盖的估算增量）——
+        与`count()`用于短路判定的口径完全一致，适合`status()`这类只读快照使用。
+        """
+        return self._last_known_cumulative + self._estimated_increment
 
     def count(self, messages: list) -> int:
         for m in messages or []:
@@ -339,7 +352,7 @@ class TokenBudgetMiddleware(AgentMiddleware):
         self._counter = TokenCounter()
 
     def status(self) -> dict[str, Any]:
-        spent = self._counter.last_known_cumulative
+        spent = self._counter.current_total
         return {"spent": spent, "budget": self._budget, "ratio": (spent / self._budget if self._budget else 0.0)}
 
     def _check(self, request: ModelRequest) -> ModelResponse | None:

@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from ainative_cli.scaffold import ProjectAlreadyExistsError, scaffold_project
+from ainative_cli.scaffold import InvalidProjectNameError, ProjectAlreadyExistsError, scaffold_project
 from ainative_cli.templates import TEMPLATES, get_template
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
@@ -38,7 +38,7 @@ def _cmd_new(args: argparse.Namespace) -> int:
 
     try:
         written = scaffold_project(target_dir, args.project_name, template, force=args.force)
-    except ProjectAlreadyExistsError as exc:
+    except (ProjectAlreadyExistsError, InvalidProjectNameError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
