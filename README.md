@@ -73,6 +73,7 @@ coverage in `examples/tests/`:
 | `personal_assistant_with_memory.py` | memory, prompt | Facts learned in one session are recalled by thread ID in a later session; conversation history is trimmed to a token budget instead of growing unbounded; a user's "forget me" request deletes all of their long-term memory without touching other users'. |
 | `agent_plugin_marketplace.py` | a2a, mcp, eval | A coordinator delegates tasks to plugin agents discovered by capability; every plugin call is audited; a deployment gate blocks a plugin whose historical error rate is too high; cyclic delegation is rejected instead of looping forever. |
 | `document_publishing_pipeline.py` | workflow, guardrail | A draft → review → publish DAG pauses instead of auto-publishing when content is too long or contains high-risk phrasing; a human approval resumes the run without re-executing the completed draft stage; each pipeline stage gets its own consecutive-error budget. |
+| `eval_harness.py` | prompt, eval | Each eval case is scored by an ensemble of independent LLM-judge calls (median score, disagreement flagged as `high_uncertainty`); a deployment gate blocks the whole suite if any single case's judges disagreed too much, even when the average score looks fine. |
 
 ```bash
 uv run python examples/products/customer_support_bot.py
@@ -84,6 +85,7 @@ uv run python examples/products/content_moderation_pipeline.py
 uv run python examples/products/personal_assistant_with_memory.py
 uv run python examples/products/agent_plugin_marketplace.py
 uv run python examples/products/document_publishing_pipeline.py
+uv run python examples/products/eval_harness.py
 ```
 
 ## Status

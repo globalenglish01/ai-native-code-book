@@ -6,11 +6,12 @@
 自己的一套调用+解析逻辑），只负责"给定一组已经解析好的分数，怎么聚合成
 一个最终判定"。
 
-`ainative_prompt.judge.judge_response`内部就是这个逻辑的一个具体应用
-（针对"评判某个响应是否满足criteria"这个场景）；`ainative_eval`把这层
-聚合抽出来，方便其他不经过`judge_response`调用路径的场景（比如已经有
-一组来自不同来源的分数，只是想复用同一套"取中位数+判定分歧度"规则）
-直接复用，而不用重新实现一遍。
+`ainative_prompt.judge.judge_response`采用的是同一套"中位数+极差判定
+分歧度"规则，但为了不让`ainative-prompt`反过来依赖`ainative-eval`
+（两个包都只依赖`ainative-core`，互相之间刻意不产生依赖），
+`judge_response`内联了自己的一份实现，不直接调用本模块的
+`aggregate_scores`。本模块面向的是"已经有一组来自不同来源的分数，
+只是想复用同一套聚合规则"这类不经过`judge_response`调用路径的场景。
 """
 
 from __future__ import annotations
