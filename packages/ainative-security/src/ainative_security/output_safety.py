@@ -91,7 +91,12 @@ _BLOCK_MODE = os.environ.get("AINATIVE_SAFETY_BLOCK_MODE", "false").lower() == "
 _ZERO_WIDTH_RE = re.compile('[​-‏‪-‮⁠-﻿]')
 _B64_BLOB_RE = re.compile(r'[A-Za-z0-9+/]{24,}={0,2}')
 _HEX_BLOB_RE = re.compile(r'(?:[0-9a-fA-F]{2}){12,}')
-_MAX_DECODE_CANDIDATES = 12
+_MAX_DECODE_CANDIDATES = 64
+"""每种编码类型最多解码这么多个候选blob——真实日志/工具输出里出现几十个
+看起来像base64的token（session id、hash等）并不罕见，之前12这个上限
+会让排在真实泄漏secret之前的无关blob把它挤出解码candidate列表之外，
+导致完全漏检。64是在"典型输出不会有几十个以上无关blob"和"解码成本
+（配合`_MAX_VARIANT_LEN`已经有上限）不会失控"之间的折衷。"""
 _MAX_VARIANT_LEN = 100_000
 
 
@@ -156,7 +161,15 @@ def _scan_raw(text: str) -> list[dict[str, str]]:
 
 
 def _scan_text(text: str) -> list[dict[str, str]]:
-    """明文 + 归一化 + 同形字折叠 + 一层解码，四路扫描合并去重。"""
+    """明文 + 归一化 + 同形字折叠 + 归一化后折叠 + 一层解码，五路扫描合并去重。
+
+    归一化和同形字折叠各自独立作用于原始`text`是不够的——一个在同形字
+    token中间插入零宽字符的payload（比如"ign​оre"，о是西里尔字母，中间
+    夹着零宽空格），归一化能去掉零宽字符但不折叠西里尔字符，折叠能处理
+    西里尔字符但不去掉零宽字符，两路各自都命中不了完整的注入短语。必须
+    额外补一路"先归一化去零宽字符、再折叠同形字"的组合变体，才能还原出
+    连续可匹配的文本——这与`strip_injection`清洗时的处理顺序一致。
+    """
     if not text:
         return []
     findings = _scan_raw(text)
@@ -176,6 +189,9 @@ def _scan_text(text: str) -> list[dict[str, str]]:
     folded = fold_confusables(text)
     if folded != text:
         _merge(folded, "cfold")
+    normalized_and_folded = fold_confusables(normalized)
+    if normalized_and_folded != normalized and normalized_and_folded != folded:
+        _merge(normalized_and_folded, "norm+cfold")
     for variant in _decode_layers(text):
         _merge(variant, "enc")
     return findings
@@ -238,7 +254,6 @@ def _extract_content_str(content: Any) -> str:
 # ── System Prompt自泄漏检测 ──────────────────────────────────────────────────
 
 _LEAK_WINDOW = 60
-_LEAK_STEP = 24
 
 
 def _normalize_ws(s: str) -> str:
@@ -248,10 +263,13 @@ def _normalize_ws(s: str) -> str:
 def _detect_prompt_leak(output_text: str, system_text: str) -> bool:
     """输出是否大段逐字复现自身system prompt（低误报兜底）。
 
-    ch07-03修复：原版`range(0, len-window+1, step)`不保证最后一个窗口贴着文本
-    末尾对齐——如果`(len(sys_n)-window) % step != 0`，末尾一小段文本永远不会被
-    纳入任何检测窗口，导致"泄漏内容恰好从这段盲区起点开始、长度超过判定阈值"
-    的场景完全漏检。这里额外补一次强制贴齐末尾的窗口，堵住这个盲区。
+    历史bug（ch07-03修复的是这个问题的一个子集，未堵住全部盲区）：早期版本
+    用固定步长`_LEAK_STEP`抽样检测窗口起点（`0, 24, 48, ...`），只要泄漏内容
+    的起始偏移不落在抽样点上，无论泄漏多长都不会被任何窗口完整包含，完全
+    漏检——ch07-03只修复了"末尾一小段永远抽不到"这一种情况，没有解决"抽样
+    步长本身就会漏掉任意偏移的泄漏"这个更根本的问题。本版改为逐字符滑动
+    （步长1），确保任何长度≥`_LEAK_WINDOW`的逐字复现都不可能因为起始偏移
+    落在两个抽样点之间而漏检。
     """
     if not system_text or not output_text:
         return False
@@ -260,10 +278,7 @@ def _detect_prompt_leak(output_text: str, system_text: str) -> bool:
     if len(sys_n) < _LEAK_WINDOW:
         return False
     last_start = len(sys_n) - _LEAK_WINDOW
-    starts = list(range(0, last_start + 1, _LEAK_STEP))
-    if starts[-1] != last_start:
-        starts.append(last_start)
-    return any(sys_n[i:i + _LEAK_WINDOW] in out_n for i in starts)
+    return any(sys_n[i:i + _LEAK_WINDOW] in out_n for i in range(last_start + 1))
 
 
 def _extract_system_text(request: ModelRequest) -> str:
