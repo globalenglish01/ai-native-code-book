@@ -19,9 +19,14 @@
 ```python
 @dataclass(frozen=True)
 class SecretRule:
-    name: str
+    name: str   # 这条规则的名字，用于日志/追溯
+    # is_default的类型是"一个函数，接收任意类型的参数，返回布尔值"——
+    # 具体怎么判断"这项配置是不是不安全的默认值"，由调用方自己传入
+    # 一个函数来定义，这个类本身不关心判断逻辑的细节。
     is_default: Callable[[Any], bool]
-    message: str
+    message: str   # 判断为不安全时，展示给人看的说明文字
+    # Literal["fail", "warn"]——类型注解限定这个字段只能是这两个
+    # 字符串之一；默认是"fail"（严重程度：应该阻断）。
     severity: Literal["fail", "warn"] = "fail"
 ```
 
@@ -38,16 +43,20 @@ class SecretRule:
 ## 周期性巡检：先睡眠，再检查
 
 ```python
+# async def——这是一个协程函数，内部会一直运行，通常作为后台任务
+# 长期挂着，不会真正"返回"。
 async def secret_drift_check_loop(config, rules, *, interval_seconds=None, is_monitored_environment=True):
+    # 条件表达式：调用方明确传了间隔时间就用它；没传（None）就从
+    # 环境变量里读取默认间隔。
     interval = (
         interval_seconds if interval_seconds is not None
         else _drift_check_interval_seconds("AINATIVE_SECRET_DRIFT_CHECK_INTERVAL_SECONDS")
     )
-    while True:
-        await asyncio.sleep(interval)
+    while True:   # 无限循环——这个后台任务应该一直运行，直到进程本身被终止
+        await asyncio.sleep(interval)   # 先睡眠，等够一个完整间隔再往下走
         try:
             await run_secret_drift_check_once(config, rules, is_monitored_environment=is_monitored_environment)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001  故意宽泛捕获,避免单次失败终止整个循环
             logger.warning("[secret-drift] Check failed (non-fatal): %s", exc)
 ```
 
@@ -74,6 +83,8 @@ from ainative_core.protocols import SecretRule
 class FakeConfig:
     jwt_secret = "changeme"   # 一个明显不安全的默认值
 
+# 定义一条规则：is_default是一个lambda（匿名函数），接收一份配置
+# 对象cfg，判断它的jwt_secret字段是不是还等于"changeme"这个默认值。
 rules = [
     SecretRule(
         name="jwt_secret_is_default",
@@ -83,6 +94,7 @@ rules = [
     ),
 ]
 
+# 把假配置和规则列表一起传进去，检查有没有命中任何一条"不安全默认值"规则。
 issues = detect_secret_drift(FakeConfig(), rules)
 print(issues)   # 应该输出那条message
 ```

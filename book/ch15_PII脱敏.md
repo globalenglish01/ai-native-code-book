@@ -14,12 +14,19 @@
 
 ```python
 def redact_pii_text(text: str) -> str:
+    # not text——空字符串/None都是"假值"；not isinstance(text, str)——
+    # 判断这压根不是字符串类型（比如传进来一个数字）。任一条件成立，
+    # 就直接原样返回，不尝试做任何处理。
     if not text or not isinstance(text, str):
         return text
     try:
+        # .sub(替换函数, 原文本)——用正则表达式找到所有匹配的片段，
+        # 每找到一处就调用一次替换函数（比如_mask_id_card）算出替换后
+        # 的内容，最终返回替换完成的新字符串。
         text = _CHINA_ID_CARD_RE.sub(_mask_id_card, text)
         text = _CHINA_MOBILE_RE.sub(_mask_mobile, text)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001  这里故意宽泛捕获,是刻意设计
+        # 脱敏过程中出现任何意外——直接返回原文本，不让异常继续往外传播。
         return text
     return text
 ```
@@ -33,6 +40,10 @@ def redact_pii_text(text: str) -> str:
 看身份证号的正则表达式：
 
 ```python
+# re.compile(...)——预先把一段正则表达式"编译"成一个可复用的
+# Pattern对象，比每次都传字符串重新解析更高效，尤其是被反复调用时。
+# \d{17}——连续17个数字；[\dXx]——最后一位可以是数字或X/x
+# （身份证号最后一位允许是校验码X）。
 _CHINA_ID_CARD_RE = re.compile(r"(?<!\d)\d{17}[\dXx](?![\dXx])")
 ```
 
@@ -43,12 +54,17 @@ _CHINA_ID_CARD_RE = re.compile(r"(?<!\d)\d{17}[\dXx](?![\dXx])")
 ## 脱敏方式：保留业务可读性，而不是整段抹去
 
 ```python
+# 参数m是一个re.Match对象——每次正则找到一处匹配，就会调用一次这个
+# 函数，把这次匹配的具体信息传进来。
 def _mask_id_card(m: re.Match[str]) -> str:
-    s = m.group(0)
+    s = m.group(0)   # 取出这次匹配到的完整文字（这里是完整的18位身份证号）
+    # s[:6]——切片取前6个字符（身份证前6位地区码）；
+    # s[-4:]——切片取最后4个字符；中间统一替换成8个星号。
     return f"{s[:6]}********{s[-4:]}"
 
 def _mask_mobile(m: re.Match[str]) -> str:
     s = m.group(0)
+    # 手机号保留前3位和后4位，中间4位换成星号。
     return f"{s[:3]}****{s[-4:]}"
 ```
 
@@ -80,8 +96,8 @@ print(redact_pii_text(12345))      # 应该原样返回12345，不报错
 
 # 验证幂等性：对已经脱敏过的文本再脱敏一次，应该不会有变化
 once = redact_pii_text("13812345678")
-twice = redact_pii_text(once)
-print(once == twice)
+twice = redact_pii_text(once)   # 对"已经打过码"的文本再跑一次
+print(once == twice)   # 应该是True——脱敏过的文本不会被再次意外改动
 ```
 
 ## 面试可能会问
