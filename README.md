@@ -15,7 +15,7 @@ AI Native system:
 | Package | Purpose |
 |---|---|
 | `ainative-core` | Foundation: `Protocol` interfaces, vendor-agnostic model factory with cross-vendor fallback, in-memory default backends. |
-| `ainative-guardrail` | Agent runtime guardrails: model routing, token/call budgets, consecutive-failure/stall detection, composite health monitoring. |
+| `ainative-guardrail` | Agent runtime guardrails: model routing, token/call budgets, consecutive-failure/stall detection, composite health monitoring, idempotency-key management, queue-backlog early warning, and rate-limited downstream consumption. |
 | `ainative-prompt` | Prompt version management, deterministic sticky A/B routing, LLM-as-judge evaluation. |
 | `ainative-security` | PII redaction, output safety scanning (secrets/injection/malicious code), homoglyph folding, secret drift monitoring. |
 | `ainative-eval` | FCARS-style governance gate (GREEN/YELLOW/RED/UNKNOWN/SKIPPED/NEEDS_REVIEW state machine with boundary-recheck noise reduction), judge-score aggregation. |
@@ -82,6 +82,7 @@ coverage in `examples/tests/`:
 | `multi_tenant_saas_platform.py` | tenancy, observability | A search query is structurally required to carry a tenant scope (there is no unscoped query path); one tenant exhausting its resource quota under load never affects another tenant's ability to search; every request gets a correlation-ID-linked trace span and structured, secret-redacted logs. |
 | `idempotent_payment_service.py` | guardrail | A client retry of the same order ID after a successful charge returns the cached result instead of charging the card twice; a mid-operation gateway failure releases the idempotency key so the customer can retry immediately once the outage clears, instead of being locked out for the full TTL window. |
 | `compliance_governance_suite.py` | eval | Multilingual fairness scoring is judged by its weakest language, not the average, so one underperforming language can't be masked by strong scores elsewhere; GDPR export/delete requests are proven to actually remove data from every registered source, with matching audit trails for both. |
+| `backpressure_job_processor.py` | guardrail | A burst of enqueued jobs triggers an early backlog warning at a configurable threshold instead of being discovered only after a downstream timeout; draining the queue is paced by a sliding-window rate limiter so no more than N calls reach the downstream service per window, regardless of how many jobs are waiting. |
 
 ```bash
 uv run python examples/products/customer_support_bot.py
@@ -100,6 +101,7 @@ uv run python examples/products/flagship_support_platform.py
 uv run python examples/products/multi_tenant_saas_platform.py
 uv run python examples/products/idempotent_payment_service.py
 uv run python examples/products/compliance_governance_suite.py
+uv run python examples/products/backpressure_job_processor.py
 ```
 
 ## Status

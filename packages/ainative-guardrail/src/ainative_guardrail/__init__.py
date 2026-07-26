@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ainative_guardrail.backpressure import QueueBacklogMonitor, RateLimitedConsumer
 from ainative_guardrail.budget_middleware import (
     ConsecutiveCallGuardMiddleware,
     ConsecutiveRetryGuardMiddleware,
@@ -36,6 +37,8 @@ __all__ = [
     "InMemoryIdempotencyStore",
     "MCPCallLimiterMiddleware",
     "ModelRouterMiddleware",
+    "QueueBacklogMonitor",
+    "RateLimitedConsumer",
     "TokenBudgetMiddleware",
     "TokenCounter",
     "idempotent_operation",
