@@ -65,3 +65,19 @@ def test_merge_mcp_configs_later_overrides_earlier_on_name_collision():
     b = build_mcp_config("server", "http", url="http://new")
     merged = merge_mcp_configs(a, b)
     assert merged["server"]["url"] == "http://new"
+
+
+def test_merge_mcp_configs_result_does_not_alias_the_input_dicts():
+    """The real-world bug class this guards against: a caller builds a
+    config once as a reusable template, merges it, then mutates the
+    merged result per-request (e.g. refreshing an auth token) — if the
+    merge shared object references with the input, that mutation would
+    silently corrupt the original template for the next reuse, leaking
+    state (like an auth header) across requests that should be
+    independent."""
+    original = build_mcp_config("server", "http", url="http://a", headers={"Authorization": "Bearer tok1"})
+    merged = merge_mcp_configs(original)
+
+    merged["server"]["headers"]["Authorization"] = "Bearer HIJACKED"
+
+    assert original["server"]["headers"]["Authorization"] == "Bearer tok1"

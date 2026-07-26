@@ -44,10 +44,20 @@ class InMemoryToolCallAuditLog:
         return list(self._records)
 
     def for_tool(self, tool_name: str) -> list[ToolCallRecord]:
+        """按工具名精确匹配——`tool_name`必须是一个真实的工具名字符串。
+
+        注意：这里的`None`不是"不过滤"的特殊值（那是`error_rate(tool_name=None)`
+        的语义，两者故意不同）——`for_tool(None)`会按字面意思匹配
+        `ToolCallRecord.tool_name is None`的记录（正常情况下不应该存在，
+        因为该字段声明类型是`str`），而不是返回全部记录。不要把这两个
+        方法的`None`当作同一件事。
+        """
         return [r for r in self._records if r.tool_name == tool_name]
 
     def error_rate(self, tool_name: str | None = None) -> float:
-        """计算错误率——`tool_name`为None时统计全部工具的整体错误率。"""
+        """计算错误率——`tool_name`为None时统计全部工具的整体错误率（这是
+        `error_rate`自己的"不过滤"哨兵值语义，不等价于调用`for_tool(None)`，
+        后者会尝试精确匹配`tool_name`字面值为`None`的记录）。"""
         records = self.for_tool(tool_name) if tool_name is not None else self._records
         if not records:
             return 0.0

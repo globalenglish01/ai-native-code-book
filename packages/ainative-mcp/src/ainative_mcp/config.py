@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 
 SAFE_ENV_KEYS: frozenset[str] = frozenset({
@@ -78,8 +79,16 @@ def merge_mcp_configs(*configs: dict[str, dict]) -> dict[str, dict]:
 
     后面的配置在server名重复时会覆盖前面的（与普通dict合并语义一致），
     调用方应确保各server名唯一，不依赖这里的覆盖行为掩盖命名冲突。
+
+    返回的每个server配置都是深拷贝，不与传入的原始`configs`共享任何
+    可变对象（列表/嵌套dict如`headers`/`env`）——调用方常见的用法是
+    "构造一次配置模板、合并进最终配置、再按每次请求需要临时修改某个
+    字段（比如刷新一个auth token）"，如果合并结果和原始输入共享同一份
+    嵌套dict引用，修改"合并后的"配置会静默污染调用方仍然持有的原始
+    模板对象，导致下一次复用模板时意外带着上一次的修改（比如认证信息
+    在看似独立的请求之间发生泄漏）。
     """
     merged: dict[str, dict] = {}
     for config in configs:
-        merged.update(config)
+        merged.update(copy.deepcopy(config))
     return merged
