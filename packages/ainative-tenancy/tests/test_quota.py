@@ -84,4 +84,56 @@ def test_usage_report_reflects_active_tenants_only():
 
     report = tracker.usage_report()
 
-    assert report == {"tenant-a": {"active_jobs": 1, "active_connections": 0}}
+    assert report == {"tenant-a": {"active_jobs": 1, "active_connections": 0, "is_over_quota": False}}
+
+
+def test_register_quota_reports_when_existing_usage_already_exceeds_the_new_limit():
+    """The real-world gap this guards against: an operator lowering a
+    runaway tenant's quota mid-incident must get an explicit signal that
+    the tenant's already-held resources now exceed the new limit — not
+    silent success that looks like the new limit took effect immediately."""
+    tracker = TenantResourceTracker()
+    tracker.register_quota("tenant-a", max_concurrent_jobs=5)
+    tracker.acquire_job_slot("tenant-a")
+    tracker.acquire_job_slot("tenant-a")
+    tracker.acquire_job_slot("tenant-a")
+
+    went_over = tracker.register_quota("tenant-a", max_concurrent_jobs=1)
+
+    assert went_over is True
+
+
+def test_register_quota_returns_false_when_new_limit_still_covers_existing_usage():
+    tracker = TenantResourceTracker()
+    tracker.register_quota("tenant-a", max_concurrent_jobs=1)
+    tracker.acquire_job_slot("tenant-a")
+
+    went_over = tracker.register_quota("tenant-a", max_concurrent_jobs=5)
+
+    assert went_over is False
+
+
+def test_usage_report_flags_is_over_quota_after_quota_lowered_below_existing_usage():
+    tracker = TenantResourceTracker()
+    tracker.register_quota("tenant-a", max_concurrent_jobs=5)
+    tracker.acquire_job_slot("tenant-a")
+    tracker.acquire_job_slot("tenant-a")
+    tracker.register_quota("tenant-a", max_concurrent_jobs=1)
+
+    report = tracker.usage_report()
+
+    assert report["tenant-a"]["is_over_quota"] is True
+
+
+def test_over_quota_tenant_still_cannot_acquire_new_slots():
+    """Lowering the quota below existing usage does not forcibly release
+    already-held slots (that would abort in-flight work), but it must
+    still block any *new* acquisition attempt."""
+    tracker = TenantResourceTracker()
+    tracker.register_quota("tenant-a", max_concurrent_jobs=5)
+    tracker.acquire_job_slot("tenant-a")
+    tracker.acquire_job_slot("tenant-a")
+    tracker.register_quota("tenant-a", max_concurrent_jobs=1)
+
+    with pytest.raises(QuotaExceededError):
+        tracker.acquire_job_slot("tenant-a")

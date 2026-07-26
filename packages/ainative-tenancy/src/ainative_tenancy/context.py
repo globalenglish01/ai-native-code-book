@@ -58,6 +58,17 @@ def tenant_scope(tenant_id: str) -> Iterator[TenantIdentity]:
 
         with tenant_scope("tenant-42"):
             handle_request()  # 内部任何代码都能 get_current_tenant()
+
+    重要边界（`asyncio.create_task`场景）：contextvars的传播是"创建时
+    拷贝"语义——在`tenant_scope()`作用域内`asyncio.create_task()`派生出
+    的后台任务，会拷贝一份创建时刻的租户身份快照，即使父作用域后续
+    退出、`_current_tenant`已经`reset`，这个已经在运行的后台任务也
+    **不会**感知到这次reset，会在自己的整个生命周期里继续沿用创建时刻
+    那个租户身份。这不是bug（是`contextvars`本身的标准行为），但意味着
+    "生命周期可能超出父请求作用域"的后台任务，必须自己在任务体内部
+    重新显式调用一次`tenant_scope(...)`来锚定正确的租户身份，而不能
+    依赖"我是在某个`tenant_scope`内被创建的，所以租户身份一定是对的"
+    这种隐式假设。
     """
     identity = TenantIdentity(tenant_id=tenant_id)
     token: Token = _current_tenant.set(identity)

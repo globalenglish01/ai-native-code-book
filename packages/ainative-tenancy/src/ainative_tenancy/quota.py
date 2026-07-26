@@ -55,9 +55,23 @@ class TenantResourceTracker:
     def register_quota(
         self, tenant_id: str, *, max_concurrent_jobs: int = DEFAULT_MAX_CONCURRENT_JOBS,
         max_pool_connections: int = DEFAULT_MAX_POOL_CONNECTIONS,
-    ) -> None:
+    ) -> bool:
+        """登记（或更新）一个租户的配额上限。
+
+        Returns:
+            这个租户当前已经占用的资源量是否已经超过刚设置的新配额——
+            比如一个租户已经持有3个任务名额，管理员在事故处置期间把配额
+            临时调低到1，这个操作本身不会强制释放已经在跑的3个任务
+            （不合理地打断正在执行的工作），但调用方必须能明确知道
+            "这次调低配额没有立刻生效于已占用的资源"，而不是得到一个
+            静默成功、看起来配额已经按新数字生效的假象。
+        """
         self._quotas[tenant_id] = TenantQuota(
             max_concurrent_jobs=max_concurrent_jobs, max_pool_connections=max_pool_connections,
+        )
+        return (
+            self._active_jobs.get(tenant_id, 0) > max_concurrent_jobs
+            or self._active_connections.get(tenant_id, 0) > max_pool_connections
         )
 
     def _quota_for(self, tenant_id: str) -> TenantQuota:
@@ -99,14 +113,27 @@ class TenantResourceTracker:
     def active_connection_count(self, tenant_id: str) -> int:
         return self._active_connections.get(tenant_id, 0)
 
-    def usage_report(self) -> dict[str, dict[str, int]]:
+    def usage_report(self) -> dict[str, dict[str, int | bool]]:
         """所有当前有活跃占用的租户的资源使用快照——供运维/仪表盘查看
-        "有没有某个租户不成比例占用共享资源"。"""
+        "有没有某个租户不成比例占用共享资源"。
+
+        `is_over_quota`字段专门覆盖`register_quota()`一次性返回值之外的
+        场景：配额被调低时已占用的资源不会被强制释放（不合理地打断正在
+        执行的工作），这个字段让"事后"查看快照的仪表盘/巡检脚本也能持续
+        发现这种状态，而不是只有当时调用`register_quota()`的那次调用点
+        才知道。
+        """
         tenant_ids = set(self._active_jobs) | set(self._active_connections)
-        return {
-            tenant_id: {
-                "active_jobs": self._active_jobs.get(tenant_id, 0),
-                "active_connections": self._active_connections.get(tenant_id, 0),
+        report: dict[str, dict[str, int | bool]] = {}
+        for tenant_id in tenant_ids:
+            quota = self._quota_for(tenant_id)
+            active_jobs = self._active_jobs.get(tenant_id, 0)
+            active_connections = self._active_connections.get(tenant_id, 0)
+            report[tenant_id] = {
+                "active_jobs": active_jobs,
+                "active_connections": active_connections,
+                "is_over_quota": (
+                    active_jobs > quota.max_concurrent_jobs or active_connections > quota.max_pool_connections
+                ),
             }
-            for tenant_id in tenant_ids
-        }
+        return report

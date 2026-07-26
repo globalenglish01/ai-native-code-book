@@ -53,3 +53,29 @@ def test_scope_restores_correctly_even_if_body_raises():
         with pytest.raises(ValueError, match="boom"), tenant_scope("inner"):
             raise ValueError("boom")
         assert get_current_tenant().tenant_id == "outer"
+
+
+@pytest.mark.asyncio
+async def test_background_task_created_inside_scope_keeps_tenant_after_parent_scope_exits():
+    """Documents the contextvars copy-on-create contract: a task spawned
+    inside tenant_scope() retains a SNAPSHOT of the tenant identity taken
+    at creation time, and keeps seeing it for its entire lifetime even
+    after the parent scope has already exited and reset its contextvar.
+    This is standard asyncio/contextvars behavior, not a bug — but any
+    background task whose lifetime can outlive its parent request must
+    re-enter tenant_scope() itself rather than relying on this snapshot."""
+    import asyncio
+
+    captured: list[str] = []
+
+    async def background_task() -> None:
+        await asyncio.sleep(0.01)
+        captured.append(get_current_tenant().tenant_id)
+
+    with tenant_scope("tenant-a"):
+        task = asyncio.create_task(background_task())
+        await asyncio.sleep(0)  # let the task start while still inside the scope
+
+    await task  # parent scope has already exited by now
+
+    assert captured == ["tenant-a"]

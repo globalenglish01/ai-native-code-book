@@ -73,6 +73,29 @@ def test_fstring_style_message_with_embedded_secret_is_redacted():
     assert "[REDACTED]" in payload["message"]
 
 
+def test_short_secret_value_is_still_redacted():
+    """The original pattern required a minimum 6-character value — a real
+    short PIN/code (e.g. a 5-6 char password) slipped through untouched."""
+    logger, stream = _logger_with_stream("test.short_secret")
+    logger.info("pwd=abc12")
+
+    payload = json.loads(stream.getvalue().strip())
+    assert "abc12" not in payload["message"]
+    assert "[REDACTED]" in payload["message"]
+
+
+def test_quoted_secret_value_containing_spaces_is_fully_redacted():
+    """The original unquoted-value pattern stopped at the first whitespace
+    character, leaking everything after the first space in a
+    space-containing quoted value (e.g. a real passphrase)."""
+    logger, stream = _logger_with_stream("test.spaced_secret")
+    logger.info('token: "abc def ghi jklmno"')
+
+    payload = json.loads(stream.getvalue().strip())
+    assert "def ghi jklmno" not in payload["message"]
+    assert "[REDACTED]" in payload["message"]
+
+
 def test_bearer_token_in_message_text_is_redacted():
     logger, stream = _logger_with_stream("test.bearer")
     logger.info("calling downstream with Bearer abcdefghijklmnopqrstuvwxyz1234567890")
@@ -119,6 +142,29 @@ def test_exception_info_is_included_as_a_formatted_string_field():
     payload = json.loads(stream.getvalue().strip())
     assert "exc_info" in payload
     assert "ValueError: something broke" in payload["exc_info"]
+
+
+def test_format_never_silently_drops_a_log_line_when_a_field_cannot_be_stringified():
+    """json.dumps(..., default=str) only helps for types json doesn't know
+    natively — it does not protect against a value's own __str__ raising,
+    which would otherwise make json.dumps itself raise and the entire log
+    line vanish (either swallowed by logging's default error handling, or
+    propagated into the caller's real code under a non-standard Handler).
+    A structured logging formatter's core promise is to never silently
+    lose a log line — it must fall back to a minimal, always-serializable
+    payload instead."""
+    class _Unstringable:
+        def __str__(self) -> str:
+            raise RuntimeError("cannot stringify me")
+
+    record = logging.LogRecord("test.unstringable", logging.INFO, "", 0, "hello", (), None)
+    record.bad_field = _Unstringable()
+
+    result = JsonFormatter().format(record)  # must not raise
+
+    payload = json.loads(result)
+    assert payload["message"] == "hello"
+    assert "logging_error" in payload
 
 
 def test_install_structured_logging_attaches_both_formatter_and_filter():

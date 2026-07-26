@@ -32,11 +32,22 @@ DEFAULT_SENSITIVE_KEYS: frozenset[str] = frozenset({
 命中这个集合的，值会被整体替换成`[REDACTED]`，不管值本身长什么样。"""
 
 _DEFAULT_VALUE_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r'(?i)(api[_\-]?key|apikey|token|secret|password|passwd|pwd)\s*[:=]\s*["\']?([^\s"\']{6,})["\']?'),
-    re.compile(r'(?i)bearer\s+([A-Za-z0-9\-._~+/]{20,})'),
+    # 带引号的值：允许值内部出现空格（真实密码/密钥可能包含空格），只在
+    # 遇到闭合引号时停止——不能用`[^\s"\']`这类排除空格的字符类，那样
+    # 值里第一个空格之后的部分会逃过脱敏（真实误报过的漏检模式）。
+    re.compile(r'(?i)(api[_\-]?key|apikey|token|secret|password|passwd|pwd)\s*[:=]\s*"([^"]{1,200})"'),
+    re.compile(r"(?i)(api[_\-]?key|apikey|token|secret|password|passwd|pwd)\s*[:=]\s*'([^']{1,200})'"),
+    # 不带引号的值：只能用空白/常见分隔符作为值的边界，最短长度降到1——
+    # 短密钥/PIN（比如"pwd=abc12"这类5-6位真实场景）不能因为凑不满原来
+    # {6,}的最短长度要求就被当作"太短所以不算敏感信息"而放过。
+    re.compile(r'(?i)(api[_\-]?key|apikey|token|secret|password|passwd|pwd)\s*[:=]\s*([^\s,;"\']{1,200})'),
+    re.compile(r'(?i)bearer\s+([A-Za-z0-9\-._~+/]{1,200})'),
 )
 """日志消息文本本身（不只是extra字段）里可能意外携带的敏感信息模式——
-即使调用方图省事用f-string把整段数据拼进了消息文本，这一层也能兜底。"""
+即使调用方图省事用f-string把整段数据拼进了消息文本，这一层也能兜底。
+故意把最短长度降到1、允许引号内出现空格——这是"宁可误伤几个字符短的
+非敏感值，也不能放过真实存在的短密钥/带空格密码"这个防御性设计取舍。
+"""
 
 
 class SensitiveDataFilter(logging.Filter):
@@ -115,7 +126,22 @@ class JsonFormatter(logging.Formatter):
                 payload[key] = value
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
-        return json.dumps(payload, default=str, ensure_ascii=False)
+        try:
+            return json.dumps(payload, default=str, ensure_ascii=False)
+        except Exception as exc:
+            # `default=str` only helps when json.dumps itself doesn't know a
+            # type — it does NOT protect against a value's own __str__/__repr__
+            # raising, which would otherwise make json.dumps raise and the
+            # entire log line get silently dropped by logging's default
+            # error handling (or, worse, escape into the caller's real
+            # business logic if a non-standard Handler doesn't catch it).
+            # A structured logging module's core promise is "never silently
+            # lose a log line" — fall back to a minimal payload that is
+            # guaranteed to serialize, rather than propagating the failure.
+            return json.dumps({
+                "timestamp": time.time(), "level": record.levelname, "logger": record.name,
+                "message": record.getMessage(), "logging_error": f"failed to serialize log record: {exc}",
+            }, ensure_ascii=False)
 
 
 def install_structured_logging(
