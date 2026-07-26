@@ -42,3 +42,23 @@ def test_no_documents_still_produces_a_stable_key():
     k1 = build_freshness_aware_cache_key("q", doc_versions={})
     k2 = build_freshness_aware_cache_key("q", doc_versions={})
     assert k1 == k2
+
+
+def test_no_collision_when_a_version_value_contains_the_old_delimiter_characters():
+    """The real-world bug this guards against: the original implementation
+    joined doc_versions into a string with ":" and "|" as delimiters — if a
+    doc_id or version value happened to contain those characters (very
+    plausible in practice: doc IDs are often paths/hashes/namespaced
+    strings), two entirely different document sets could concatenate into
+    the identical string and collide onto the same cache key, silently
+    serving a stale/wrong cached answer for a genuinely different document
+    combination."""
+    k1 = build_freshness_aware_cache_key("q", doc_versions={"a": "1", "b": "2"})
+    k2 = build_freshness_aware_cache_key("q", doc_versions={"a": "1|b:2"})
+    assert k1 != k2
+
+
+def test_no_collision_when_a_doc_id_contains_a_colon():
+    k1 = build_freshness_aware_cache_key("q", doc_versions={"a:b": "c"})
+    k2 = build_freshness_aware_cache_key("q", doc_versions={"a": "b:c"})
+    assert k1 != k2

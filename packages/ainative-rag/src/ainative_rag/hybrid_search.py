@@ -18,13 +18,25 @@ DEFAULT_RRF_K = 60
 避免排名靠前的文档因为分母过小而权重被过度放大。"""
 
 
+class InvalidRankError(ValueError):
+    """`RankedResult.rank`不满足"从1开始"这个约定时抛出。"""
+
+
 @dataclass(frozen=True)
 class RankedResult:
-    """一路检索结果里的一条命中——只需要文档标识和它在这一路结果里的排名。"""
+    """一路检索结果里的一条命中——只需要文档标识和它在这一路检索结果里的排名。"""
 
     doc_id: str
     rank: int
     """从1开始的排名（1表示这一路检索里最相关的结果）。"""
+
+    def __post_init__(self) -> None:
+        if self.rank < 1:
+            raise InvalidRankError(
+                f"rank must be >= 1 (ranks start from 1), got {self.rank} for doc_id={self.doc_id!r} — "
+                f"an off-by-one upstream (e.g. enumerate() starting at 0) would otherwise silently "
+                f"cause rrf_fuse's `1/(k+rank)` to divide by zero or produce a negative denominator"
+            )
 
 
 def rrf_fuse(*result_lists: list[RankedResult], k: int = DEFAULT_RRF_K) -> list[tuple[str, float]]:

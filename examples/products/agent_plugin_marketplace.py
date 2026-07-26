@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import time
 
-from ainative_a2a.dispatcher import DelegationLimitExceeded, Dispatcher
+from ainative_a2a.dispatcher import DelegationLimitExceededError, Dispatcher
 from ainative_a2a.registry import InMemoryAgentRegistry
 from ainative_a2a.transport import InProcessTransport
 from ainative_core.protocols import A2ATask, AgentCapability, GateCheck, GateResult
@@ -130,7 +130,7 @@ async def main() -> None:
             capability="get_weather", payload={}, sender_agent="weather_agent",
             delegation_chain=("coordinator", "weather_agent"),
         )
-    except DelegationLimitExceeded as exc:
+    except DelegationLimitExceededError as exc:
         print(f"\ncyclic delegation correctly rejected: {exc}")
 
 

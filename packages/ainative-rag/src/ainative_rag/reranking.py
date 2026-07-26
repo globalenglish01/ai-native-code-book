@@ -19,12 +19,19 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
 DEFAULT_MISSING_SCORE = 0.0
 """重排序未能给某个片段打分时的默认分数——刻意选择最低值而非满分，
 对应"未验证相关性的内容不应该被当作高相关内容对待"这一诚实语义。"""
+
+
+class InvalidRerankScoreError(ValueError):
+    """`rerank_score`是NaN或无穷大时抛出——这两种值会让`aggregate_chunk_scores`
+    的"取最高分"比较逻辑永久失效（真实bug背景见下方`ScoredChunk`的
+    `__post_init__`）。"""
 
 
 @dataclass(frozen=True)
@@ -36,6 +43,20 @@ class ScoredChunk:
     与"确实打分了、但分数是0.0"是两种不同的情况，聚合时都会被当作
     `DEFAULT_MISSING_SCORE`处理，但保留`None`这个区分是为了让调用方
     需要时能单独统计"重排序覆盖率"。"""
+
+    def __post_init__(self) -> None:
+        if self.rerank_score is not None and (math.isnan(self.rerank_score) or math.isinf(self.rerank_score)):
+            # 真实bug背景：`aggregate_chunk_scores`用`score > current_best`
+            # 比较取最高分——一旦`current_best`是NaN，Python里"NaN和任何数
+            # 比较都是False"，导致这个文档的最高分永久卡在NaN，之后再高的
+            # 真实分数都无法覆盖它，且`sorted()`不会报错，只会把这份文档
+            # 静默排到一个不确定的位置——这正是本模块想要避免的"看起来正常
+            # 但结果全错"的失败模式，必须在源头（构造`ScoredChunk`时）就
+            # 拒绝这类不合法的分数，而不是让它进入聚合逻辑之后才出问题。
+            raise InvalidRerankScoreError(
+                f"rerank_score must be a finite number or None, got {self.rerank_score} "
+                f"for chunk_id={self.chunk_id!r}"
+            )
 
 
 def aggregate_chunk_scores(

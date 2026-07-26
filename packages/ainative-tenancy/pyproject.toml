@@ -1,7 +1,7 @@
 [project]
 name = "ainative-tenancy"
 version = "0.1.0"
-description = "AI Native Framework多租户模块——租户身份传播、资源配额隔离、检索作用域断言"
+description = "AI Native Framework 多租户模块——租户身份传播、资源配额隔离、检索作用域断言"
 requires-python = ">=3.11"
 dependencies = [
     "ainative-core",

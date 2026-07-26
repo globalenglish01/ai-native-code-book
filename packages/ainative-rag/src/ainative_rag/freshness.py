@@ -16,6 +16,7 @@ doc_id关联清理"的能力（不需要额外的删除时清理机制）。
 from __future__ import annotations
 
 import hashlib
+import json
 
 
 def build_freshness_aware_cache_key(query: str, *, doc_versions: dict[str, str]) -> str:
@@ -26,15 +27,22 @@ def build_freshness_aware_cache_key(query: str, *, doc_versions: dict[str, str])
         query: 用户查询文本。
         doc_versions: 参与生成这次回答的每份文档，当前的版本标识（可以是
             版本号、内容哈希、或最后更新时间戳，只要文档内容变化时这个
-            值也会变化）。字典按key排序后参与哈希计算，保证"同一组文档、
+            值也会变化）。按key排序后参与哈希计算，保证"同一组文档、
             不同顺序传入"仍然产生相同的缓存键。
 
     Returns:
         一个稳定的缓存键字符串——`query`不变但任意一份`doc_versions`
         变化，都会产生不同的键，天然让旧缓存失效，不需要额外的删除时
         清理机制。
+
+    真实bug背景：早期实现用`"|".join(f"{k}:{v}")`这类手工拼接分隔符的
+    方式构造哈希输入，如果`doc_id`或版本值本身含有`:`/`|`这类分隔符
+    字符（真实场景下doc_id经常是路径/哈希/带命名空间的字符串，并不罕见），
+    两组完全不同的`doc_versions`会拼接出一模一样的字符串，产生哈希碰撞——
+    比如`{"a": "1", "b": "2"}`和`{"a": "1|b:2"}`会拼出相同的`"a:1|b:2"`。
+    改用`json.dumps`结构化序列化：JSON会给每个字符串正确加引号/转义，
+    `"a:b"`和`"a"`在JSON里永远是两个不同的token，不可能因为内容恰好
+    包含分隔符字符就被混淆成同一个序列化结果。
     """
-    sorted_versions = sorted(doc_versions.items())
-    versions_part = "|".join(f"{doc_id}:{version}" for doc_id, version in sorted_versions)
-    payload = f"{query}::{versions_part}"
+    payload = json.dumps({"query": query, "doc_versions": doc_versions}, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

@@ -14,8 +14,14 @@ _VALID_PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 `pyproject.toml`（已用真实输入复现过）。"""
 
 
-class ProjectAlreadyExistsError(Exception):
-    """目标目录已存在且非空时抛出——防止意外覆盖用户已有的工作。"""
+class ProjectAlreadyExistsError(RuntimeError):
+    """目标目录已存在且非空时抛出——防止意外覆盖用户已有的工作。
+
+    继承`RuntimeError`而不是裸`Exception`，与本框架其余"操作因当前状态
+    无法继续"类错误（如`DuplicateOperationError`/`QuotaExceededError`）
+    保持一致的异常层级约定，方便调用方用`except RuntimeError`统一捕获
+    这一类"状态冲突"错误，与`InvalidProjectNameError`这类"输入本身
+    不合法"（继承`ValueError`）的错误类型区分开。"""
 
 
 class InvalidProjectNameError(ValueError):

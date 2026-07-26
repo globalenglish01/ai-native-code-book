@@ -1,7 +1,7 @@
 [project]
 name = "ainative-observability"
 version = "0.1.0"
-description = "AI Native Framework可观测性模块——结构化JSON日志、统一敏感信息过滤器、轻量级追踪span记录"
+description = "AI Native Framework 可观测性模块——结构化JSON日志、统一敏感信息过滤器、轻量级追踪span记录"
 requires-python = ">=3.11"
 dependencies = [
     "ainative-core",

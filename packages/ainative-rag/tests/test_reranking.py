@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from ainative_rag.reranking import ScoredChunk, aggregate_chunk_scores, apply_rerank_if_enabled
+import pytest
+from ainative_rag.reranking import InvalidRerankScoreError, ScoredChunk, aggregate_chunk_scores, apply_rerank_if_enabled
 
 
 def test_missing_score_defaults_to_lowest_not_highest():
@@ -76,3 +77,25 @@ def test_apply_rerank_missing_score_for_some_docs_uses_default_low_score():
     scores = {"a": 0.9}  # "b" was never scored
     result = apply_rerank_if_enabled(order, enabled=True, rerank_fn=lambda ids: scores)
     assert result == ["a", "b"]
+
+
+def test_nan_rerank_score_is_rejected():
+    """The real-world bug this guards against: Python's NaN comparison
+    semantics make `score > current_best` always False once current_best
+    is NaN, so a NaN-scored chunk processed first would permanently
+    poison a document's best score — no subsequent real score, however
+    high, could ever overwrite it. Must be rejected at construction time,
+    not allowed to silently corrupt the aggregation."""
+    with pytest.raises(InvalidRerankScoreError):
+        ScoredChunk(chunk_id="c1", doc_id="d1", rerank_score=float("nan"))
+
+
+def test_infinite_rerank_score_is_rejected():
+    with pytest.raises(InvalidRerankScoreError):
+        ScoredChunk(chunk_id="c1", doc_id="d1", rerank_score=float("inf"))
+    with pytest.raises(InvalidRerankScoreError):
+        ScoredChunk(chunk_id="c1", doc_id="d1", rerank_score=float("-inf"))
+
+
+def test_none_rerank_score_still_allowed_after_nan_validation_added():
+    ScoredChunk(chunk_id="c1", doc_id="d1", rerank_score=None)  # must not raise

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from ainative_a2a.dispatcher import DelegationLimitExceeded
+from ainative_a2a.dispatcher import DelegationLimitExceededError
 from ainative_core.protocols import A2ATask, AgentCapability
 from products.agent_plugin_marketplace import PluginMarketplace
 
@@ -103,7 +103,7 @@ async def test_cyclic_delegation_is_rejected_not_infinite_looped():
     marketplace = PluginMarketplace()
     await _install_weather(marketplace)
 
-    with pytest.raises(DelegationLimitExceeded):
+    with pytest.raises(DelegationLimitExceededError):
         await marketplace.dispatcher.delegate(
             capability="get_weather", payload={}, sender_agent="weather_agent",
             delegation_chain=("coordinator", "weather_agent"),

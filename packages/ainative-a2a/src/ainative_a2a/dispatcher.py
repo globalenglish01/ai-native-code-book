@@ -19,7 +19,7 @@ from ainative_core.protocols import A2AResult, A2ATask, AgentRegistry, AgentTran
 DEFAULT_MAX_DELEGATION_DEPTH = 5
 
 
-class DelegationLimitExceeded(RuntimeError):
+class DelegationLimitExceededError(RuntimeError):
     """委派链条超过`max_delegation_depth`或检测到循环委派时抛出。"""
 
 
@@ -30,7 +30,7 @@ class Dispatcher:
         registry: 能力注册表，用于按能力名称发现目标agent。
         transport: 实际发送任务的传输实现，默认可用`InProcessTransport`。
         max_delegation_depth: 允许的最大委派链条长度，超过则拒绝并抛出
-            `DelegationLimitExceeded`。
+            `DelegationLimitExceededError`。
     """
 
     def __init__(
@@ -65,20 +65,20 @@ class Dispatcher:
                 由`Dispatcher`自己在链条上追加`sender_agent`）。
 
         Raises:
-            DelegationLimitExceeded: 委派链条超过深度上限，或`target_agent`
+            DelegationLimitExceededError: 委派链条超过深度上限，或`target_agent`
                 已经出现在当前链条里（循环委派）。
             LookupError: 没有找到能处理该能力的agent，或匹配到多个但未显式
                 指定`target_agent`。
         """
         chain = (*delegation_chain, sender_agent)
         if len(chain) > self._max_delegation_depth:
-            raise DelegationLimitExceeded(
+            raise DelegationLimitExceededError(
                 f"delegation chain depth {len(chain)} exceeds max_delegation_depth={self._max_delegation_depth}: {chain}"
             )
 
         resolved_target = target_agent or self._resolve_target(capability)
         if resolved_target in chain:
-            raise DelegationLimitExceeded(
+            raise DelegationLimitExceededError(
                 f"cyclic delegation detected: '{resolved_target}' already appears in chain {chain}"
             )
 

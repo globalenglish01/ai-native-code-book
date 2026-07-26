@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from ainative_a2a.dispatcher import DelegationLimitExceeded, Dispatcher
+from ainative_a2a.dispatcher import DelegationLimitExceededError, Dispatcher
 from ainative_a2a.registry import InMemoryAgentRegistry
 from ainative_a2a.transport import InProcessTransport
 from ainative_core.protocols import A2ATask, AgentCapability
@@ -83,7 +83,7 @@ async def test_cyclic_delegation_is_rejected():
     registry.register("agent_a", AgentCapability(name="task_a", description=""))
     registry.register("agent_b", AgentCapability(name="task_b", description=""))
 
-    with pytest.raises(DelegationLimitExceeded, match="cyclic"):
+    with pytest.raises(DelegationLimitExceededError, match="cyclic"):
         await dispatcher.delegate(
             capability="task_a", payload={}, sender_agent="agent_b",
             target_agent="agent_a", delegation_chain=("agent_a", "agent_b"),
@@ -101,7 +101,7 @@ async def test_delegation_depth_limit_is_enforced():
     transport.register_handler("worker", handler)
 
     # Chain already has 2 entries; adding sender makes 3, which exceeds max_delegation_depth=2.
-    with pytest.raises(DelegationLimitExceeded, match="exceeds max_delegation_depth"):
+    with pytest.raises(DelegationLimitExceededError, match="exceeds max_delegation_depth"):
         await dispatcher.delegate(
             capability="do_thing", payload={}, sender_agent="agent_c",
             delegation_chain=("agent_a", "agent_b"),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from ainative_rag.hybrid_search import RankedResult, ranked_results_from_scores, rrf_fuse
+import pytest
+from ainative_rag.hybrid_search import InvalidRankError, RankedResult, ranked_results_from_scores, rrf_fuse
 
 
 def test_document_appearing_in_both_lists_ranks_highest():
@@ -59,3 +60,22 @@ def test_rrf_fuse_composes_with_ranked_results_from_scores():
     fused = rrf_fuse(ranked_results_from_scores(bm25_scores), ranked_results_from_scores(vector_scores))
 
     assert fused[0][0] == "b"  # appears in both, ranked #1 in each
+
+
+def test_rank_zero_is_rejected():
+    """The real-world bug this guards against: an upstream off-by-one bug
+    (e.g. enumerate() starting at 0 instead of 1) would otherwise reach
+    rrf_fuse's `1/(k+rank)` and divide by zero when k=0, or silently
+    produce a wrong (inflated) score for any k — this must be caught at
+    RankedResult construction time, not deep inside the fusion math."""
+    with pytest.raises(InvalidRankError):
+        RankedResult(doc_id="a", rank=0)
+
+
+def test_negative_rank_is_rejected():
+    with pytest.raises(InvalidRankError):
+        RankedResult(doc_id="a", rank=-60)
+
+
+def test_rank_one_is_the_minimum_valid_value():
+    RankedResult(doc_id="a", rank=1)  # must not raise
