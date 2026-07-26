@@ -5,7 +5,7 @@
 LLM模型模拟真实调用，验证"这套框架真的可以脱离任何具体基础设施独立
 运行"这个核心设计目标。
 
-运行方式（在D:\ai-native-code-book目录下）::
+运行方式（在D:\ai-native-framework目录下）::
 
     uv run python examples/quickstart.py
 """

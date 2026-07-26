@@ -4,7 +4,7 @@ requires-python = ">=3.11"
 
 [manifest]
 members = [
-    "ai-native-code-book-workspace",
+    "ai-native-framework-workspace",
     "ainative-a2a",
     "ainative-cli",
     "ainative-core",
@@ -14,13 +14,14 @@ members = [
     "ainative-memory",
     "ainative-observability",
     "ainative-prompt",
+    "ainative-rag",
     "ainative-security",
     "ainative-tenancy",
     "ainative-workflow",
 ]
 
 [[package]]
-name = "ai-native-code-book-workspace"
+name = "ai-native-framework-workspace"
 version = "0.1.0"
 source = { virtual = "." }
 
@@ -35,6 +36,7 @@ dev = [
     { name = "ainative-memory" },
     { name = "ainative-observability" },
     { name = "ainative-prompt" },
+    { name = "ainative-rag" },
     { name = "ainative-security" },
     { name = "ainative-tenancy" },
     { name = "ainative-workflow" },
@@ -57,6 +59,7 @@ dev = [
     { name = "ainative-memory", editable = "packages/ainative-memory" },
     { name = "ainative-observability", editable = "packages/ainative-observability" },
     { name = "ainative-prompt", editable = "packages/ainative-prompt" },
+    { name = "ainative-rag", editable = "packages/ainative-rag" },
     { name = "ainative-security", editable = "packages/ainative-security" },
     { name = "ainative-tenancy", editable = "packages/ainative-tenancy" },
     { name = "ainative-workflow", editable = "packages/ainative-workflow" },
@@ -244,6 +247,29 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "ainative-core", editable = "packages/ainative-core" }]
+
+[[package]]
+name = "ainative-rag"
+version = "0.1.0"
+source = { editable = "packages/ainative-rag" }
+dependencies = [
+    { name = "ainative-core" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "ainative-core", editable = "packages/ainative-core" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
+]
 
 [[package]]
 name = "ainative-security"

@@ -19,6 +19,7 @@ dev = [
     "ainative-cli",
     "ainative-observability",
     "ainative-tenancy",
+    "ainative-rag",
 ]
 
 [tool.uv.sources]
@@ -34,9 +35,10 @@ ainative-a2a = { workspace = true }
 ainative-cli = { workspace = true }
 ainative-observability = { workspace = true }
 ainative-tenancy = { workspace = true }
+ainative-rag = { workspace = true }
 
 [project]
-name = "ai-native-code-book-workspace"
+name = "ai-native-framework-workspace"
 version = "0.1.0"
 requires-python = ">=3.11"
 
@@ -67,6 +69,9 @@ ignore = [
 # LLM返回的JSON解析：任何格式异常都视为"这次判分不可用"，故意用宽泛捕获。
 "packages/ainative-prompt/src/ainative_prompt/judge.py" = ["BLE001"]
 "packages/ainative-eval/src/ainative_eval/gate.py" = ["BLE001"]
+# 重排序调用失败时统一退回原始检索顺序，任何异常类型都不应该让整个
+# 检索流程崩溃，故意宽泛捕获。
+"packages/ainative-rag/src/ainative_rag/reranking.py" = ["BLE001"]
 # 测试代码依赖assert做断言（pytest的标准写法）；测试里的一次性fake类
 # （_FakeRequest/_FakeModel）只会被实例化一次，"多实例共享可变默认值"这个
 # RUF012顾虑不适用，不值得为一次性fixture类引入ClassVar样板代码。

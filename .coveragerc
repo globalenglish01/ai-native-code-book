@@ -12,3 +12,4 @@ source =
     packages/ainative-cli/src
     packages/ainative-observability/src
     packages/ainative-tenancy/src
+    packages/ainative-rag/src

@@ -2,7 +2,7 @@
 
 全程不需要真实API Key、不需要安装Postgres/Redis/MongoDB。
 
-运行方式（在D:\\ai-native-code-book目录下）::
+运行方式（在D:\\ai-native-framework目录下）::
 
     uv run python examples/quickstart_v2.py
 """

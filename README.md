@@ -26,6 +26,7 @@ AI Native system:
 | `ainative-cli` | `ainative new <project> --type <type>` scaffolding — generates a runnable starter project wired to a sensible subset of the above packages. |
 | `ainative-observability` | Structured JSON logging with a unified sensitive-data redaction filter, lightweight tracing spans with correlation-ID linkage and export-failure self-monitoring. |
 | `ainative-tenancy` | Tenant identity propagation (contextvar-based), per-tenant resource quotas for shared infrastructure, scoped-query helper that makes an unscoped/unfiltered query structurally impossible. |
+| `ainative-rag` | Document chunking with overlap-ratio validation, RRF-based hybrid search fusion, reranking score aggregation (missing scores default low, never a false-positive perfect score), a staged retrieve→generate pipeline with honest empty-result refusal and citation tracking, embedding batch accounting (hard error on count mismatch, never silent data loss), and freshness-aware cache keys. |
 
 ## Design principles
 
@@ -83,6 +84,7 @@ coverage in `examples/tests/`:
 | `idempotent_payment_service.py` | guardrail | A client retry of the same order ID after a successful charge returns the cached result instead of charging the card twice; a mid-operation gateway failure releases the idempotency key so the customer can retry immediately once the outage clears, instead of being locked out for the full TTL window. |
 | `compliance_governance_suite.py` | eval | Multilingual fairness scoring is judged by its weakest language, not the average, so one underperforming language can't be masked by strong scores elsewhere; GDPR export/delete requests are proven to actually remove data from every registered source, with matching audit trails for both. |
 | `backpressure_job_processor.py` | guardrail | A burst of enqueued jobs triggers an early backlog warning at a configurable threshold instead of being discovered only after a downstream timeout; draining the queue is paced by a sliding-window rate limiter so no more than N calls reach the downstream service per window, regardless of how many jobs are waiting. |
+| `rag_knowledge_base_service.py` | rag | Documents are chunked with overlap; keyword and "vector" search results are fused by rank (RRF), not raw score; a document that fails to get a rerank score is never mistaken for the top match; a query with no relevant content gets an honest refusal instead of a fabricated answer; updating a document's version naturally invalidates its cached answers. |
 
 ```bash
 uv run python examples/products/customer_support_bot.py
@@ -102,6 +104,7 @@ uv run python examples/products/multi_tenant_saas_platform.py
 uv run python examples/products/idempotent_payment_service.py
 uv run python examples/products/compliance_governance_suite.py
 uv run python examples/products/backpressure_job_processor.py
+uv run python examples/products/rag_knowledge_base_service.py
 ```
 
 ## Status
@@ -138,7 +141,22 @@ uv run python examples/products/backpressure_job_processor.py
   — this repo ships no Dockerfiles at all, since it's consumed as
   installed packages inside someone else's deployment, not a deployable
   service with its own container image.
+- Batch 5: `ainative-rag` — the last remaining checklist category (A: RAG)
+  now has a package. `anything-chat-rag` (the real-project source for this
+  category's checklist entries) is itself MIT-licensed end to end, so this
+  extracts and reimplements the *design patterns* validated there (chunking
+  with overlap-ratio safety, RRF-based hybrid-search fusion, a staged
+  retrieve→generate pipeline with honest empty-result refusal, embedding
+  batch accounting, freshness-aware cache keys) rather than copying
+  LightRAG's own implementation — several sub-modules directly encode the
+  fix for a real bug the checklist audit found (e.g. reranking previously
+  defaulted a missing score to a false-positive 1.0 "perfect match" instead
+  of the lowest score; embedding count mismatches were silently swallowed
+  instead of raised as a hard, unmissable error).
 
-**Deferred:** `ainative-rag` (LightRAG-derived — requires careful separation
-of the user's own additions from LightRAG's upstream MIT-licensed code before
-extraction).
+Every checklist category (from the source project's knowledge-point audit
+that this framework was extracted against) that maps to installable
+framework code now has a corresponding package. The remaining items
+(container-image hardening, CI trigger configuration, and general
+review-methodology principles) are genuinely not package-shaped — see the
+CI/Status notes above for the specific reasoning on each.

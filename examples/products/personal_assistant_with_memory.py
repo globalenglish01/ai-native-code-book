@@ -69,7 +69,7 @@ async def main() -> None:
 
     # Session 1: user mentions some preferences.
     await assistant.remember(user_id, "User prefers concise answers, no bullet points.")
-    await assistant.remember(user_id, "User is working on a Python project called 'ai-native-code-book'.")
+    await assistant.remember(user_id, "User is working on a Python project called 'ai-native-framework'.")
     await assistant.remember(user_id, "User's timezone is UTC+8.")
 
     context1 = await assistant.start_session(user_id, thread_id="session-1")
