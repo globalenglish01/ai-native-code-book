@@ -18,12 +18,14 @@
 
 ```python
 {
+    # http传输：这个server已经独立跑起来了，直接发HTTP请求跟它通信。
     "search": {"transport": "http", "url": "http://localhost:9000/mcp"},
     "filesystem": {
+        # stdio传输：需要自己启动一个子进程来运行这个server。
         "transport": "stdio",
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
-        "env": {"PATH": "/usr/bin"},
+        "command": "npx",   # 启动子进程用的可执行文件
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],   # 命令行参数列表
+        "env": {"PATH": "/usr/bin"},   # 给这个子进程什么环境变量
     },
 }
 ```
@@ -41,6 +43,8 @@
 def build_mcp_config(
     name: str,
     transport: str,
+    # *之后所有参数必须用"参数名=值"方式传，防止几个字符串/列表参数
+    # 因为位置顺序传反而不自知。
     *,
     url: str | None = None,
     headers: dict[str, str] | None = None,
@@ -49,7 +53,9 @@ def build_mcp_config(
     cwd: str | None = None,
     env: dict[str, str] | None = None,
 ) -> dict[str, dict]:
-    entry: dict = {"transport": transport}
+    entry: dict = {"transport": transport}   # 一开始只有transport这一个键
+    # 一连串"只有真的传了才写进去"的判断——None代表"没传"，
+    # 不会往结果字典里塞一堆无意义的None值键。
     if url is not None:
         entry["url"] = url
     if headers is not None:
@@ -62,7 +68,7 @@ def build_mcp_config(
         entry["cwd"] = cwd
     if env is not None:
         entry["env"] = env
-    return {name: entry}
+    return {name: entry}   # 外面包一层，用name当key，方便和其他配置合并
 ```
 
 先看函数签名里的一个语法细节：`transport`后面单独出现的这个`*`。在Python里，参数列表中间单独写一个`*`，意思是"它后面的所有参数都必须用`参数名=值`的方式传入，不能按位置传"。也就是说这个函数只能写成`build_mcp_config("search", transport="http", url="...")`，不能写成`build_mcp_config("search", "http", "http://...")`把`url`当第三个位置参数传进去。这样设计的好处是：`url`/`headers`/`command`/`args`/`cwd`/`env`这六个参数,一眼看上去很难靠位置顺序去记忆和区分，强制写出参数名可以避免调用方记错顺序、把`cwd`的值意外传成了`url`的值这类容易发生却很难被发现的错误。
@@ -80,9 +86,12 @@ def build_mcp_config(
 ## `merge_mcp_configs`：合并配置，但每一份都是独立拷贝
 
 ```python
+# *configs——可变参数，调用方可以传任意数量个配置字典。
 def merge_mcp_configs(*configs: dict[str, dict]) -> dict[str, dict]:
     merged: dict[str, dict] = {}
     for config in configs:
+        # copy.deepcopy(config)——递归深拷贝，确保合并结果和原始
+        # config不共享任何嵌套的可变对象（比如env字典）。
         merged.update(copy.deepcopy(config))
     return merged
 ```
@@ -90,8 +99,10 @@ def merge_mcp_configs(*configs: dict[str, dict]) -> dict[str, dict]:
 这个函数的作用很直白——把多个`build_mcp_config(...)`的结果，合并成一份`MultiServerMCPClient`真正需要的完整配置字典，用起来大概是这样：
 
 ```python
+# 每次调用build_mcp_config都返回一个{name: entry}形状的小字典。
 http_cfg = build_mcp_config("search", transport="http", url="http://localhost:9000/mcp")
 fs_cfg = build_mcp_config("filesystem", transport="stdio", command="npx", args=[...])
+# 直接把这几份小字典喂给merge_mcp_configs，拼成一份完整配置。
 full_config = merge_mcp_configs(http_cfg, fs_cfg)
 # full_config == {"search": {...}, "filesystem": {...}}
 ```
@@ -107,16 +118,19 @@ full_config = merge_mcp_configs(http_cfg, fs_cfg)
 class ToolCallRecord:
     """一次工具调用的完整审计记录。"""
 
-    tool_name: str
-    agent_name: str
-    status: ToolCallStatus
-    duration_ms: float
+    tool_name: str    # 调用了哪个工具
+    agent_name: str    # 是哪个Agent发起的调用
+    status: ToolCallStatus   # 这次调用成功还是失败
+    duration_ms: float   # 这次调用耗时多少毫秒
 
     run_id: str | None = None
     thread_id: str | None = None
-    input_summary: dict[str, Any] = field(default_factory=dict)
-    output_summary: dict[str, Any] = field(default_factory=dict)
-    error_message: str | None = None
+    input_summary: dict[str, Any] = field(default_factory=dict)   # 这次调用传了什么参数的摘要
+    output_summary: dict[str, Any] = field(default_factory=dict)   # 这次调用返回了什么的摘要
+    error_message: str | None = None   # 失败时的错误信息
+    # field(default_factory=time.time)——注意这里传的是time.time
+    # 这个函数本身、不加括号调用；每创建一条新记录，如果没显式传
+    # timestamp，就会自动调用一次time.time()取当前时刻。
     timestamp: float = field(default_factory=time.time)
 ```
 
@@ -126,14 +140,18 @@ class ToolCallRecord:
 
 ```python
 def for_tool(self, tool_name: str) -> list[ToolCallRecord]:
+    # 列表推导式：只保留tool_name字段精确等于传入值的记录。
     return [r for r in self._records if r.tool_name == tool_name]
 
 def error_rate(self, tool_name: str | None = None) -> float:
+    # 条件表达式：传了具体工具名就只看这个工具的记录；
+    # 没传（None）就直接用全部记录，不经过for_tool这层过滤。
     records = self.for_tool(tool_name) if tool_name is not None else self._records
     if not records:
-        return 0.0
+        return 0.0   # 没有任何记录，错误率没有意义，给0
+    # sum(1 for r in records if 条件)——统计满足"状态是error"的记录条数。
     errors = sum(1 for r in records if r.status == "error")
-    return errors / len(records)
+    return errors / len(records)   # 错误条数除以总条数，得到错误率
 ```
 
 ## 同一个`None`，在两个方法里是两件完全不同的事
@@ -182,7 +200,7 @@ print(full_config)
 # 观察：search的配置里没有command/args/env，filesystem的配置里没有url/headers
 
 # 记录几次工具调用，体会error_rate(None) 和 for_tool(None) 的区别
-log = InMemoryToolCallAuditLog()
+log = InMemoryToolCallAuditLog()   # 内存版审计日志存储
 log.record(ToolCallRecord(tool_name="read_file", agent_name="a1", status="success", duration_ms=10))
 log.record(ToolCallRecord(tool_name="read_file", agent_name="a1", status="error", duration_ms=20))
 
