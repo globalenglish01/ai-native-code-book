@@ -125,6 +125,19 @@ uv run python examples/products/backpressure_job_processor.py
   idempotency-key management and `ainative-eval` with fairness-score
   aggregation and a GDPR data-subject-rights service, closing narrower gaps
   in the API-infrastructure (D) and compliance (J) categories.
+- Batch 4: closed the remaining checklist gaps that had real code-level
+  fixes available — `ainative-core`'s usage tracking now explicitly flags
+  `usage_available: False` instead of silently faking zero-token usage for
+  self-hosted inference backends (vLLM/SGLang) that don't return usage
+  metadata, and `ainative-guardrail` gained queue-backlog early warning
+  plus rate-limited downstream consumption (async task queue backpressure).
+  A `pip-audit` CI job now scans resolved dependencies for known CVEs
+  (checklist J-category: dependency-vulnerability scanning, as distinct
+  from Dependabot's version-bump PRs). The one item genuinely out of
+  scope: container-image hardening (non-root `USER`, base-image scanning)
+  — this repo ships no Dockerfiles at all, since it's consumed as
+  installed packages inside someone else's deployment, not a deployable
+  service with its own container image.
 
 **Deferred:** `ainative-rag` (LightRAG-derived — requires careful separation
 of the user's own additions from LightRAG's upstream MIT-licensed code before

@@ -60,3 +60,24 @@ jobs:
           uv run --python ${{ matrix.python-version }} python examples/products/idempotent_payment_service.py
           uv run --python ${{ matrix.python-version }} python examples/products/compliance_governance_suite.py
           uv run --python ${{ matrix.python-version }} python examples/products/backpressure_job_processor.py
+
+  security-audit:
+    # Separate from the test matrix — dependency vulnerability scanning
+    # doesn't need to repeat per OS/Python combo, and it checks known CVEs
+    # in resolved dependencies rather than code quality (checklist J-category
+    # gap: dependabot alone only proposes version bumps, it doesn't scan for
+    # known-vulnerable versions already in use).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Sync workspace dependencies
+        run: uv sync
+
+      - name: Audit dependencies for known vulnerabilities
+        run: uvx pip-audit --local
