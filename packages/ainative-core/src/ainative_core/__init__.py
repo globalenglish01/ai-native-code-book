@@ -16,4 +16,11 @@
 
 from __future__ import annotations
 
+# `__version__` 是Python社区的一个通用约定——一个包如果定义了这个变量，
+# 别的代码就能通过 `ainative_core.__version__` 读到"这是第几个版本"，
+# 不需要单独去解析pyproject.toml文件。这个包本身不导出任何具体的类/
+# 函数在这里（不像别的ainative-*包那样有一长串`from xxx import ...`），
+# 是因为protocols.py/model_factory.py等文件里的内容，使用方通常会
+# 写`from ainative_core.protocols import UsageSink`这种"精确到具体
+# 文件"的导入方式，而不是`from ainative_core import UsageSink`。
 __version__ = "0.1.0"

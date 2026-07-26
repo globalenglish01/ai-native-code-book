@@ -13,11 +13,56 @@
 
 from __future__ import annotations
 
+# Callable 用来给"一个函数/方法"本身写类型注解——`Callable[[Any], bool]`
+# 表示"一个接收一个任意类型参数、返回布尔值的函数"，`Callable[[], GateResult]`
+# 表示"一个不接收任何参数、返回GateResult的函数"。
 from collections.abc import Callable
+
+# dataclass、field 见下面第一次出现dataclass时的详细解释。
 from dataclasses import dataclass, field
+
+# datetime/UTC 用来表示"某个具体的时间点"，UTC是"世界统一时间"这个时区，
+# 服务器记录时间时通常统一用UTC，避免因为服务器部署在不同时区而混乱。
 from datetime import UTC, datetime
+
+# Any——任意类型；Literal——"字面量类型"，比如`Literal["fail", "warn"]`
+# 表示"这个值只能是字符串'fail'或字符串'warn'这两者之一，不能是别的
+# 任意字符串"，比普通的`str`类型注解更精确，IDE和类型检查工具能帮你
+# 发现"传错了一个不在允许范围内的字符串"这种错误。
+# Protocol/runtime_checkable——本文件的核心，见下面详细解释。
 from typing import Any, Literal, Protocol, runtime_checkable
 
+# ═══════════════════════════════════════════════════════════════════════
+# 本文件反复出现两个Python语法概念，这里先集中解释一次，后面就不再重复：
+#
+# 【dataclass 数据类】
+# 写在类前面的 `@dataclass` 是一个"装饰器"，作用是自动帮你生成这个类的
+# 构造函数（__init__）、比较逻辑（==）、打印格式（repr）等样板代码——
+# 你只需要按 `字段名: 类型` 的格式声明这个类有哪些字段，不用自己手写
+# `def __init__(self, a, b): self.a = a; self.b = b` 这类重复代码。
+# `@dataclass(frozen=True)` 里的 frozen=True 表示"冻结"——创建出实例
+# 之后，字段就不能再被修改，任何"实例.字段 = 新值"的操作都会直接报错。
+# 这份文件里的大多数dataclass都选择frozen=True，因为它们大多代表
+# "一次性传递的数据快照"（比如一次调用的结果），创建之后本就不应该
+# 再被改动。
+#
+# 【Protocol 协议】
+# `class Xxx(Protocol):` 定义的不是一个"可以直接创建实例"的普通类，
+# 而是一份"接口约定"——只规定"需要有哪些方法、方法的参数和返回值类型
+# 是什么"，方法体里用`...`（表示"具体怎么实现，这里不关心"）。
+# 任何别的类，只要真的实现了这些同名同参数的方法，Python就会认为它
+# "满足了这个Protocol"，不需要显式写`class MyStore(PromptStore):`
+# 去声明"我继承/实现了它"——这叫"结构化类型"（只要长得像鸭子、叫声像
+# 鸭子，就当它是鸭子，不需要血缘关系）。
+# `@runtime_checkable` 这个装饰器让这份协议额外支持
+# `isinstance(某个对象, 这个Protocol)` 这种运行时检查——没加这个装饰器的
+# Protocol，只能在写代码/类型检查阶段起作用，不能在程序真正运行时用来
+# 判断一个对象符不符合约定。
+# ═══════════════════════════════════════════════════════════════════════
+
+# 下面这种 `# ── 标题 ──` 格式的注释，纯粹是给人看的"分节标题"，把这个
+# 文件里数量不少的类型定义，按照"属于哪个功能领域"分组，方便阅读时
+# 快速定位，本身不影响程序运行。
 # ── 用量记录 ──────────────────────────────────────────────────────────────────
 
 
@@ -38,6 +83,9 @@ class UsageSink(Protocol):
         字段集合由调用方（`model_factory.py`）决定，本协议不强制schema，
         只要求"能接收一个dict、自己决定怎么持久化"。
         """
+        # 这个`...`（英文叫Ellipsis）在Protocol里就是"方法体先空着"的
+        # 占位符——Protocol本身不会被直接实例化调用，真正的实现逻辑
+        # 由别的类（比如InMemoryUsageSink）提供。
         ...
 
 
@@ -57,12 +105,18 @@ class SecretRule:
     name: str
     """规则的简短标识，比如 "jwt_secret_is_default"。"""
 
+    # 这个字段的类型是"一个函数"——调用时传入配置对象，返回True/False。
+    # 把"怎么判断"这件事本身当作数据存起来（而不是写死成if/else代码），
+    # 好处是不同项目可以传入自己的判断逻辑，SecretRule这个类本身完全
+    # 不需要知道具体判断细节。
     is_default: Callable[[Any], bool]
     """接收调用方传入的配置对象，返回 True 表示"这一项目前还是不安全的默认值"。"""
 
     message: str
     """命中时展示给运维人员的具体说明文字。"""
 
+    # `Literal["fail", "warn"] = "fail"` ——类型是"只能是这两个字符串
+    # 之一"，默认值是"fail"。
     severity: Literal["fail", "warn"] = "fail"
     """`fail`：在生产/预发布环境应该阻断启动；`warn`：仅记录警告，不阻断。"""
 
@@ -86,6 +140,7 @@ class PromptVariant:
     version: int
     """版本号，每次修改自增。"""
 
+    # 布尔类型字段，默认值True——新创建的变体默认是"生效中"的状态。
     is_active: bool = True
 
 
@@ -98,6 +153,12 @@ class PromptStore(Protocol):
     当作生产环境的最终存储（进程重启数据即丢失）。
     """
 
+    # 方法名前面的`async`表示这是一个"异步方法"——调用它时需要写成
+    # `await store.get_active_variants(...)`，而不是直接调用。异步方法
+    # 存在的意义是：真实实现如果要访问数据库/网络（比如查Postgres），
+    # 这个过程需要等待，"异步"让程序在等待期间可以先去处理别的事情，
+    # 而不是傻等在这里浪费时间。这份Protocol里几乎所有方法都是异步的，
+    # 因为真实存储实现几乎必然涉及网络/磁盘IO。
     async def get_active_variants(
         self, agent_name: str, prompt_key: str
     ) -> list[PromptVariant]:
@@ -145,6 +206,12 @@ class MemoryEntry:
     content: str
     """记忆内容本身（通常是LLM提取出的结构化摘要文本）。"""
 
+    # `field(default_factory=dict)` 的写法专门用在"默认值是可变对象
+    # （比如列表/字典）"的场景——不能直接写 `metadata: dict = {}`，
+    # 因为那样所有实例会共享同一个字典对象（这是Python的一个经典陷阱：
+    # 可变默认值只会在类定义时被创建一次，之后所有实例复用同一份）。
+    # `default_factory=dict` 表示"每次创建新实例时，调用一次dict()
+    # 生成一个全新的空字典"，确保每个实例都有自己独立的metadata。
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -162,6 +229,10 @@ class MemoryStore(Protocol):
         """追加一条新记忆。"""
         ...
 
+    # `*` 出现在参数列表中间，表示它后面的参数（before_sequence/max_items）
+    # 必须用"参数名=值"的方式传入，不能只按位置传（见config.py里的
+    # 详细解释）。`int | None = None` 表示"可以是整数，也可以不传
+    # （默认None）"。
     async def load_recent(
         self, owner_id: str, *, before_sequence: int | None = None, max_items: int = 10
     ) -> list[MemoryEntry]:
@@ -198,9 +269,16 @@ class CheckpointSaverFactory(Protocol):
 
 # ── 治理门控（FCARS风格） ─────────────────────────────────────────────────────
 
+# 这一行不是类，是一个"类型别名"——给`Literal[...]`这一长串取一个短名字
+# `GateStatus`，之后别的地方写`GateStatus`就等同于写这一整串Literal，
+# 避免到处重复这六个具体状态值。
 GateStatus = Literal["GREEN", "YELLOW", "RED", "UNKNOWN", "SKIPPED", "NEEDS_REVIEW"]
 
 
+# 注意：这里是`@dataclass`，没有加`frozen=True`——意味着GateResult创建
+# 之后字段仍然可以被修改。这是刻意的：治理Gate的判定逻辑有时需要先
+# 创建一个初步结果、再根据后续复核调整某个字段（比如`score`），不像
+# 前面那些"一次性数据快照"那样天然适合冻结。
 @dataclass
 class GateResult:
     """单一维度的检查结果——统一schema，不管这个维度具体检查的是什么内容。"""
@@ -234,6 +312,13 @@ class GateDecision:
     dimensions: list[GateResult]
     blockers: list[str]
     """未通过、且是gating维度的检查项名称列表——这些是导致 passed=False 的具体原因。"""
+
+    # `default_factory=lambda: datetime.now(UTC)` ——lambda是Python里
+    # "写一个不用取名字的匿名小函数"的语法，这里的意思是"每次创建新的
+    # GateDecision实例时，调用一次'获取当前UTC时间'，作为默认值"。
+    # 用lambda包一层是因为default_factory要求传入一个"不带参数就能
+    # 调用"的函数，而`datetime.now`本身需要传时区参数，所以用lambda
+    # 包成"不需要额外传参就能调用"的形式。
     checked_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -276,6 +361,12 @@ class A2ATask:
     sender_agent: str
     """发起委派的agent标识——用于审计和委派深度追踪。"""
 
+    # `tuple[str, ...]` 表示"一个元组，里面每一项都是字符串，长度不限"
+    # （`...`在这里的含义和Protocol里的`...`不同，是类型注解语法，表示
+    # "前面这个类型可以重复任意次"）。用元组而不是列表，是因为元组本身
+    # 不可变，天然适合"委派链条"这种一旦记录下来就不该再被中途篡改的
+    # 数据。默认值`()`是一个空元组，表示"最初发起的这一次委派，链条
+    # 还是空的"。
     delegation_chain: tuple[str, ...] = ()
     """从最初发起方到当前委派链路上依次经过的agent标识，用于检测"A委派给B、
     B又委派给A"这类循环委派，以及限制委派链条的最大深度。"""
