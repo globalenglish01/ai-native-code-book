@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 
@@ -37,7 +38,12 @@ def trim_history_to_budget(
 
     Returns:
         从`history`尾部（最近的消息）开始保留、总估算token数不超过`max_tokens`
-        的子列表，顺序与原列表一致（时间顺序，不是倒序）。
+        的子列表，顺序与原列表一致（时间顺序，不是倒序）——每条消息都是
+        深拷贝，不与原始`history`共享任何可变对象。调用方常见的用法是
+        "把裁剪结果当成自己的副本，发给模型之前再做一次编辑/脱敏"，如果
+        返回的字典和原始`history`是同一个对象，这类"看起来安全的修改"
+        会静默改写调用方可能仍然持有、以为完好无损的原始历史记录（比如
+        存在checkpoint/会话存储里的那份）。
     """
     kept: list[dict[str, Any]] = []
     used = 0
@@ -49,7 +55,7 @@ def trim_history_to_budget(
         kept.append(message)
         used += cost
     kept.reverse()
-    return kept
+    return copy.deepcopy(kept)
 
 
 def estimate_history_tokens(history: list[dict[str, Any]], *, content_key: str = "content") -> int:

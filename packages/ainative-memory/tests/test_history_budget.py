@@ -26,6 +26,19 @@ def test_trim_history_empty_input_returns_empty():
     assert trim_history_to_budget([], max_tokens=100) == []
 
 
+def test_trim_history_result_does_not_alias_the_original_messages():
+    """A caller treating the trimmed result as "my own copy to redact/
+    annotate before sending to the model" must not be able to corrupt the
+    original history list still held elsewhere (e.g. the checkpoint/
+    session store) by mutating the trimmed messages."""
+    history = [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi there"}]
+    trimmed = trim_history_to_budget(history, max_tokens=1000)
+
+    trimmed[0]["content"] = "MUTATED"
+
+    assert history[0]["content"] == "hello"
+
+
 def test_estimate_history_tokens_sums_all_messages():
     history = [{"content": "x" * 40}, {"content": "y" * 40}]
     assert estimate_history_tokens(history) == 20

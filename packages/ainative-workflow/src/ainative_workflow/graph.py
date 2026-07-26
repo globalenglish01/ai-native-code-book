@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -169,8 +170,16 @@ class Workflow:
         return list(self._order)
 
     async def run(self, initial_context: dict[str, Any] | None = None) -> WorkflowRun:
+        """开始一次新的运行——`initial_context`会被深拷贝后才存进`WorkflowRun`，
+        不与调用方传入的原始dict共享任何嵌套的可变对象。`dict(initial_context)`
+        只保护了顶层key不被别名共享，如果调用方传入的字典里某个value本身
+        是嵌套dict/list（比如`{"config": {...}}`），节点执行过程中修改
+        `ctx["config"]`会直接改到调用方自己手上那份"模板"上，导致同一个
+        context对象被复用去发起多次运行时，前一次运行的节点执行结果会
+        意外污染后一次运行的初始状态。
+        """
         run = WorkflowRun(
-            context=dict(initial_context or {}),
+            context=copy.deepcopy(initial_context) if initial_context else {},
             node_status={name: NodeStatus.PENDING for name in self._order},
         )
         return await self._execute(run)
@@ -180,12 +189,13 @@ class Workflow:
 
         Args:
             run: 之前调用`run()`或`resume()`返回的、`is_paused=True`的状态对象。
-            resume_context: 恢复执行前合并进`run.context`的额外数据（比如人工审批的决定）。
+            resume_context: 恢复执行前合并进`run.context`的额外数据（比如人工审批的决定）——
+                同样会被深拷贝后再合并，理由与`run()`的`initial_context`一致。
         """
         if not run.is_paused:
             raise ValueError("resume() called on a run that is not paused")
         if resume_context:
-            run.context.update(resume_context)
+            run.context.update(copy.deepcopy(resume_context))
         run.paused_at = None
         run.pause_payload = None
         return await self._execute(run)

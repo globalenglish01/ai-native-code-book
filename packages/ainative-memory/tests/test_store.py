@@ -56,3 +56,33 @@ async def test_delete_by_owner_removes_all_entries_and_returns_count():
 async def test_delete_by_owner_on_unknown_owner_returns_zero():
     store = InMemoryMemoryStore()
     assert await store.delete_by_owner("never-existed") == 0
+
+
+@pytest.mark.asyncio
+async def test_mutating_metadata_after_append_does_not_corrupt_the_stored_entry():
+    """MemoryEntry is a frozen dataclass, but its metadata field is an
+    ordinary mutable dict — "frozen" only blocks field reassignment, not
+    in-place mutation of a field's contents. A caller reusing the same
+    mutable metadata dict as a template across multiple entries must not
+    be able to silently rewrite history already believed persisted."""
+    store = InMemoryMemoryStore()
+    meta = {"tags": ["draft"]}
+    await store.append(MemoryEntry(owner_id="user-1", sequence=1, content="hello", metadata=meta))
+
+    meta["tags"].append("CORRUPTED")
+    meta["new_key"] = "should not leak into store"
+
+    recent = await store.load_recent("user-1")
+    assert recent[0].metadata == {"tags": ["draft"]}
+
+
+@pytest.mark.asyncio
+async def test_mutating_metadata_on_a_returned_entry_does_not_corrupt_the_store():
+    store = InMemoryMemoryStore()
+    await store.append(MemoryEntry(owner_id="user-1", sequence=1, content="hello", metadata={"tags": ["draft"]}))
+
+    got = await store.load_recent("user-1")
+    got[0].metadata["tags"].append("via getter")
+
+    recent = await store.load_recent("user-1")
+    assert recent[0].metadata == {"tags": ["draft"]}

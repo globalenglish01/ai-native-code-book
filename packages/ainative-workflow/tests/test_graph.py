@@ -223,3 +223,43 @@ async def test_diamond_shaped_dag_runs_correctly():
     assert calls.index("a") < calls.index("c")
     assert calls.index("b") < calls.index("d")
     assert calls.index("c") < calls.index("d")
+
+
+@pytest.mark.asyncio
+async def test_run_does_not_alias_nested_mutable_values_in_initial_context():
+    """dict(initial_context) only protects top-level keys from being shared
+    by reference — any nested dict/list value was still aliased. A caller
+    reusing a context template containing nested structured data across
+    multiple wf.run() calls must not have a node's mutation of that nested
+    data leak back into the caller's template."""
+    def node_fn(ctx):
+        ctx["nested"]["a"] = 999
+        return "done"
+
+    wf = Workflow([WorkflowNode(name="step", fn=node_fn, output_key="result")])
+    caller_ctx = {"nested": {"a": 1}}
+
+    run = await wf.run(caller_ctx)
+
+    assert caller_ctx["nested"]["a"] == 1
+    assert run.context["nested"]["a"] == 999
+
+
+@pytest.mark.asyncio
+async def test_resume_does_not_alias_nested_mutable_values_in_resume_context():
+    def approval(ctx):
+        if not ctx.get("approved"):
+            raise WorkflowPaused()
+        ctx["config"]["applied"] = True
+        return "done"
+
+    wf = Workflow([WorkflowNode(name="approval", fn=approval, output_key="result")])
+    run = await wf.run({})
+    assert run.is_paused
+
+    resume_payload = {"approved": True, "config": {"applied": False}}
+    run = await wf.resume(run, resume_context=resume_payload)
+
+    assert run.is_completed
+    assert resume_payload["config"]["applied"] is False
+    assert run.context["config"]["applied"] is True
