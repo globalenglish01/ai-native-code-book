@@ -15,18 +15,26 @@
 ```python
 @dataclass(frozen=True)
 class SpanRecord:
+    """一个已完成的span——导出到后端的最小schema。"""
+
     span_id: str
+    # 这个span自己的唯一编号，构造时由`uuid.uuid4()`随机生成。
     parent_span_id: str | None
+    # 父span的编号；`None`表示这是一条链路里最顶层、没有父节点的span。
     correlation_id: str
+    # 串联同一次请求/操作跨层级ID体系的关联字段——真实项目应该把这个
+    # 字段设成request_id本身或者能反查到request_id的值。
     name: str
     start_time: float
     end_time: float
     attributes: dict[str, Any] = field(default_factory=dict)
-    status: str = "ok"
+    status: str = "ok"   # "ok"正常结束，"error"表示span执行过程中抛出了异常
     error_message: str | None = None
 
     @property
     def duration_ms(self) -> float:
+        # 耗时是从start_time/end_time直接推导出来的，不需要独立存储、
+        # 也不需要调用方自己写减法乘法。
         return (self.end_time - self.start_time) * 1000
 ```
 
@@ -56,14 +64,16 @@ class _ObservableSpanRecorder:
         self._exporter = exporter
         self._on_export_failure = on_export_failure
         self.export_failure_count = 0
+        # 累计失败次数——让"导出失败"这件事可统计、可观察，而不是
+        # 发生了也没人知道。
 
     def export(self, record: SpanRecord) -> None:
         try:
             self._exporter.export(record)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001  这里故意宽泛捕获，是刻意设计不是疏忽
             self.export_failure_count += 1
             if self._on_export_failure is not None:
-                self._on_export_failure(exc)
+                self._on_export_failure(exc)   # 把异常对象传给调用方,让它有机会告警/上报监控
 ```
 
 `except Exception`这里故意写得很宽泛——导出失败的原因可能是网络断开、后端服务挂了、序列化出问题，各种意料之外的情况都有可能，而这个方法的职责就是"不管具体因为什么原因失败，都不能让追踪系统本身的问题反过来影响被追踪的业务代码"。但和本章开头那个反面场景（`except: pass`）的关键区别在于：**这里没有真的把异常"吞掉"就完事**——`self.export_failure_count += 1`把每一次失败都变成了一个持续累加、可以被外部代码随时读取的数字；如果调用方注册了`on_export_failure`回调，还会额外把这次具体的异常对象传出去，让调用方有机会立刻打一条告警日志或者上报监控系统。
@@ -75,29 +85,33 @@ class _ObservableSpanRecorder:
 ```python
 @contextmanager
 def span(self, name: str, *, correlation_id: str, parent: SpanRecord | None = None, **attributes: Any):
-    span_id = str(uuid.uuid4())
+    span_id = str(uuid.uuid4())   # 随机生成的唯一编号，几乎不可能重复
     start_time = time.time()
-    status = "ok"
+    status = "ok"   # 先假设会成功，try块里抛出异常时再改成"error"
     error_message: str | None = None
     try:
+        # 占位记录——此时with块内的代码还没真正执行，end_time暂时填成
+        # start_time；只是给调用方一个可以读span_id、当作子span父级的对象。
         placeholder = SpanRecord(
             span_id=span_id, parent_span_id=parent.span_id if parent else None,
             correlation_id=correlation_id, name=name, start_time=start_time, end_time=start_time,
             attributes=dict(attributes),
         )
-        yield placeholder
+        yield placeholder   # 把占位记录交给`as s`，暂停在这里执行with块里的代码
     except Exception as exc:
         status = "error"
         error_message = str(exc)
-        raise
+        raise   # 原样重新抛出，不吞掉、不改变异常类型，只是顺便记录一下
     finally:
+        # 不管try块正常结束还是被except捕获，finally都一定会执行——
+        # 这保证"span一定会被导出"，不会因为业务代码出错就被跳过。
         end_time = time.time()
         record = SpanRecord(
             span_id=span_id, parent_span_id=parent.span_id if parent else None,
             correlation_id=correlation_id, name=name, start_time=start_time, end_time=end_time,
             attributes=dict(attributes), status=status, error_message=error_message,
         )
-        self._recorder.export(record)
+        self._recorder.export(record)   # 即使导出本身失败，也不会让异常冒出去影响调用方
 ```
 
 用法是这样的：

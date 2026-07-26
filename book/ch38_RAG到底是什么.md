@@ -26,13 +26,19 @@ async def run_rag_query(
     generate_fn: Callable[[str, str], Awaitable[str]],
     max_context_chunks: int = 5,
 ) -> RagAnswer:
+    # 阶段一：检索。不关心retriever背后是关键词/向量/混合检索的哪一种实现。
     chunks = await retriever.retrieve(query)
     if not chunks:
+        # 阶段二（可能提前结束）：完全没检索到内容，立刻诚实拒答，
+        # 绝不让流程继续往下走到"可能编造答案"的生成阶段。
         return RagAnswer(text=NO_RELEVANT_CONTENT_MESSAGE, citations=[], grounded=False)
 
+    # 阶段三：组织上下文，只取排序最靠前的N个片段。
     selected = chunks[:max_context_chunks]
     context = "\n\n".join(f"[{c.doc_id}#{c.chunk_id}] {c.text}" for c in selected)
+    # 阶段四：生成回答——具体调哪个模型由调用方的generate_fn决定。
     answer_text = await generate_fn(query, context)
+    # 阶段五：附带引用——用selected（真正参与生成的片段），不是chunks（全部候选）。
     citations = [Citation(doc_id=c.doc_id, chunk_id=c.chunk_id) for c in selected]
     return RagAnswer(text=answer_text, citations=citations, grounded=True)
 ```
@@ -62,6 +68,8 @@ class RagAnswer:
     text: str
     citations: list[Citation]
     grounded: bool
+    # `False`表示检索阶段完全没有命中任何相关内容，text是诚实的
+    # "没有足够信息"提示，而不是模型编造的答案。
 ```
 
 这里有一个容易被忽略、但很重要的设计细节：**当检索无结果时，`text`字段依然是非空的**（它是`NO_RELEVANT_CONTENT_MESSAGE`这段有意义的提示文字），如果调用方（比如前端界面）只是简单地判断"`text`是否为空字符串"来决定要不要展示这条回答，会误把这条"拒答提示"当成一份正常的答案展示出去。
@@ -85,7 +93,10 @@ citations = [Citation(doc_id=c.doc_id, chunk_id=c.chunk_id) for c in selected]
 ```python
 @runtime_checkable
 class Retriever(Protocol):
+    """"怎么把一个查询变成一批候选片段"这件事的抽象接口。"""
     async def retrieve(self, query: str) -> list[RetrievedChunk]: ...
+    # 只声明签名、不提供实现——任何类只要有同名同签名的方法就自动满足
+    # 这个接口，不需要显式写`class X(Retriever)`继承。
 ```
 
 这是本书里第三次遇到类似的`Protocol`写法（第7章的MCP工具接口、第34章的`SpanExporter`）——只要一个类有一个同名同签名的`async def retrieve`方法，就自动被认为实现了这个接口，不需要显式继承。`run_rag_query`完全不关心这个`retriever`背后到底是关键词匹配、向量检索还是混合检索（下一章要讲的内容），只要它能"把一个查询变成一批候选片段"就行——这种"面向接口而不是面向具体实现"的设计，让检索算法可以随时被替换、升级，而不影响整套流水线的其他部分。

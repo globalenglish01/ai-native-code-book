@@ -78,10 +78,10 @@
 - [ch41 —— 缓存与新鲜度](ch41_缓存与新鲜度.md)
 
 ### 第十四部分：把13个包拼起来 —— 综合实战
-- [ch42 —— flagship_support_platform 端到端走查](ch42_flagship端到端走查.md)
-- [ch43 —— multi_tenant_saas_platform](ch43_multi_tenant_saas_platform.md)
-- [ch44 —— rag_knowledge_base_service](ch44_rag_knowledge_base_service.md)
-- [ch45 —— 你自己的项目](ch45_你自己的项目.md)
+- [ch42 —— 搭建一个真实的客服平台](ch42_搭建一个真实的客服平台.md)
+- [ch43 —— 复杂案例的委派与审批](ch43_复杂案例的委派与审批.md)
+- [ch44 —— 接入知识库检索能力](ch44_接入知识库检索能力.md)
+- [ch45 —— 多租户隔离收尾](ch45_多租户隔离收尾.md)
 
 ### 第十五部分：求职冲刺
 - [ch46 —— AI Native工程师/架构师，面试官到底在考什么](ch46_面试官到底在考什么.md)
