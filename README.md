@@ -76,6 +76,7 @@ coverage in `examples/tests/`:
 | `eval_harness.py` | prompt, eval | Each eval case is scored by an ensemble of independent LLM-judge calls (median score, disagreement flagged as `high_uncertainty`); a deployment gate blocks the whole suite if any single case's judges disagreed too much, even when the average score looks fine. |
 | `devops_shell_agent.py` | security, mcp | Diagnostic shell command output (log tails, config dumps) is scanned before it re-enters the agent's context; a leaked API key or database URL gets redacted; every command is audited, and previously-redacted calls can be pulled up for a security review. |
 | `structured_extraction_agent.py` | guardrail, eval | Extracting structured fields (vendor/amount/date) from a document retries with the specific validation errors fed back into the next attempt, capped at a per-task-type retry budget; a filing gate blocks auto-filing extractions that never converged on valid output. |
+| `flagship_support_platform.py` | **all 10 packages** | The flagship, end-to-end example: `ainative-cli` scaffolds the project skeleton in one call, then a running support agent handles multi-turn chat (guardrail/prompt/memory/security, same pattern as `customer_support_bot.py`) and escalates billing disputes through a DAG (`ainative-workflow`) that pauses for human sign-off before delegating (`ainative-a2a`) to an audited (`ainative-mcp`) specialist agent — with PII redacted *before* it ever crosses the delegation boundary — gated by `ainative-eval` before deployment. |
 
 ```bash
 uv run python examples/products/customer_support_bot.py
@@ -90,6 +91,7 @@ uv run python examples/products/document_publishing_pipeline.py
 uv run python examples/products/eval_harness.py
 uv run python examples/products/devops_shell_agent.py
 uv run python examples/products/structured_extraction_agent.py
+uv run python examples/products/flagship_support_platform.py
 ```
 
 ## Status

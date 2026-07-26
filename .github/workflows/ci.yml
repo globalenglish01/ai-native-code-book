@@ -55,3 +55,4 @@ jobs:
           uv run --python ${{ matrix.python-version }} python examples/products/eval_harness.py
           uv run --python ${{ matrix.python-version }} python examples/products/devops_shell_agent.py
           uv run --python ${{ matrix.python-version }} python examples/products/structured_extraction_agent.py
+          uv run --python ${{ matrix.python-version }} python examples/products/flagship_support_platform.py
