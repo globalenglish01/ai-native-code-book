@@ -15,18 +15,22 @@
 先看这几个类型的定义（在`ainative_core/protocols.py`里）：
 
 ```python
+# Literal[...]——类型注解，表示这个类型的值只能是列出的这几个
+# 字符串之一，写别的值类型检查工具会报错。
 GateStatus = Literal["GREEN", "YELLOW", "RED", "UNKNOWN", "SKIPPED", "NEEDS_REVIEW"]
 
+# @dataclass（没有frozen=True）——允许创建之后继续修改字段，
+# 因为治理判定有时需要先建一个初步结果、再根据复核调整。
 @dataclass
 class GateResult:
     """单一维度的检查结果——统一schema，不管这个维度具体检查的是什么内容。"""
 
-    dimension: str
-    gating: bool
-    status: GateStatus
-    detail: str
-    evidence: dict[str, Any] = field(default_factory=dict)
-    score: float | None = None
+    dimension: str   # 这次检查的是哪个维度，比如"pii_redaction"
+    gating: bool      # 这个维度的结果是否有权力真正阻止发布
+    status: GateStatus   # 六选一的状态
+    detail: str       # 给人看的说明文字
+    evidence: dict[str, Any] = field(default_factory=dict)   # 支撑这个判定的具体证据
+    score: float | None = None   # 可选的具体分数，没有分数就是None
 ```
 
 不管一项检查背后是一次简单的正则匹配、一次数据库查询，还是一次LLM打分，最终都要被压缩成同一种形状：一个维度名字（`dimension`）、这个维度是否参与拦截判定（`gating`）、一个六选一的状态（`status`）、一段人话说明（`detail`）、附带证据（`evidence`）、以及可选的具体分数（`score`）。这就是这一章要学的第一个设计原则：**当你的系统需要汇总来源迥异的多个检查结果时，先设计一个统一的结果schema，比先写判定逻辑更重要**——有了统一形状，后面无论是渲染报告、做统一判定，还是给这份结果接入新的展示界面，都不需要针对"这项检查到底是什么类型"写特殊处理。
@@ -42,6 +46,9 @@ class GateCheck:
 
     name: str
     gating: bool
+    # Callable[[], GateResult]——"一个不接收任何参数、返回GateResult
+    # 的函数"；具体检查逻辑需要用到的外部数据，必须提前用闭包/partial
+    # 绑定好，不能通过这里的参数传入（因为约定这个函数不接收参数）。
     check_fn: Callable[[], GateResult]
 ```
 
@@ -50,6 +57,8 @@ class GateCheck:
 ## 六态状态机：为什么不是简单的"通过/不通过"
 
 ```python
+# 把每个合法状态定义成一个同名的模块级常量——之后代码里写
+# status == GREEN，而不是status == "GREEN"，拼错会被立刻检查出来。
 GREEN: GateStatus = "GREEN"
 YELLOW: GateStatus = "YELLOW"
 RED: GateStatus = "RED"
@@ -65,12 +74,12 @@ NEEDS_REVIEW: GateStatus = "NEEDS_REVIEW"
 ```python
 def status_from_score(score: float | None, green_min: float, yellow_min: float) -> GateStatus:
     if score is None:
-        return UNKNOWN
+        return UNKNOWN   # 压根没有分数——不知道好不好，不是"确定很差"
     if score >= green_min:
-        return GREEN
+        return GREEN   # 达到最高门槛，最好的等级
     if score >= yellow_min:
-        return YELLOW
-    return RED
+        return YELLOW   # 没达到最高门槛，但达到了中间门槛
+    return RED   # 两个门槛都没达到，最差的等级
 ```
 
 这里第一个判断`score is None`值得多说一句：**分数是`None`，意味着这项检查根本没能算出一个具体分数（可能检查过程本身出错、也可能这项检查压根不适用），应该归类为`UNKNOWN`，而不是当作0分处理**。0分和"没有分数"是两件完全不同的事——0分是"确定很差"，`UNKNOWN`是"不知道好不好"。如果把两者混为一谈，会导致"检查脚本本身挂掉了"和"检查真的发现了严重问题"在报告里看起来一模一样，排查问题时会走很多弯路。
@@ -83,10 +92,10 @@ def status_from_score(score: float | None, green_min: float, yellow_min: float) 
 
 ```python
 def decide(dimensions: list[GateResult]) -> GateDecision:
-    blockers: list[str] = []
+    blockers: list[str] = []   # 收集所有"导致拒绝发布"的具体原因文本
     for d in dimensions:
         if not d.gating:
-            continue
+            continue   # 这个维度没有否决权，不管状态是什么都跳过，不计入拦截
         if d.status == RED:
             blockers.append(f"{d.dimension} = RED: {d.detail}")
         elif d.status == UNKNOWN:
@@ -96,6 +105,8 @@ def decide(dimensions: list[GateResult]) -> GateDecision:
                 f"{d.dimension} = NEEDS_REVIEW (score at boundary, recheck inconsistent, "
                 f"manual review recommended before deploying): {d.detail}"
             )
+    # not blockers——空列表在Python里是"假值"，not []就是True；
+    # 一条拦截原因都没收集到，才判定为通过。
     return GateDecision(passed=not blockers, dimensions=dimensions, blockers=blockers)
 ```
 
@@ -109,11 +120,13 @@ def decide(dimensions: list[GateResult]) -> GateDecision:
 
 ```python
 def run(self) -> GateDecision:
-    dimensions: list[GateResult] = []
-    for check in self._checks:
+    dimensions: list[GateResult] = []   # 收集每一项检查各自的结果
+    for check in self._checks:   # 依次跑注册进来的每一条检查
         try:
-            result = check.check_fn()
+            result = check.check_fn()   # 真正调用这项检查的逻辑
         except Exception as exc:
+            # 检查过程本身出了异常——不让它继续往外抛，构造一个
+            # UNKNOWN状态的结果代替，把异常信息写进detail里。
             result = GateResult(
                 dimension=check.name,
                 gating=check.gating,
@@ -121,7 +134,7 @@ def run(self) -> GateDecision:
                 detail=f"check raised an exception: {exc}",
             )
         dimensions.append(result)
-    return decide(dimensions)
+    return decide(dimensions)   # 把所有维度的结果一起交给decide做最终判定
 ```
 
 这里的`try/except Exception`捕获得非常宽泛——几乎任何异常都会被接住。源码注释特意说明了这不是疏忽：这个文件在项目的`pyproject.toml`里被显式加了一条ruff规则例外（放行"except过于宽泛"这条检查），因为**"防止单个检查项的意外崩溃拖垮整个Gate"这个设计意图，本来就需要这么宽泛的捕获**。想象一下如果不这么做：三十项检查里，第五项因为某个边界情况抛出了一个没处理过的`KeyError`，如果这个异常没被捕获，整个`run()`方法会直接崩溃退出，导致后面二十五项本来能正常跑完的检查一个结果都拿不到——这比"第五项检查标记成UNKNOWN、其余检查照常跑完"要糟糕得多。这是一个值得记住的工程原则：**当你在编排一组彼此独立的检查/任务时，一个任务的意外失败应该被隔离在它自己的范围内，不应该级联影响到其他本可以正常完成的任务**——用`try/except`把每个任务包起来，把异常转换成一个"失败状态"而不是让它继续往上抛，是实现这种隔离最直接的手段。
@@ -139,6 +152,7 @@ def run(self) -> GateDecision:
 ```python
 from ainative_eval import Gate, GateCheck, GateResult, GREEN, RED
 
+# 三个"检查函数"——各自都符合"不接收参数、返回GateResult"这个约定。
 def check_guardrail_wired() -> GateResult:
     return GateResult(dimension="guardrail_wired", gating=True, status=GREEN, detail="护栏中间件已正确接入")
 
@@ -149,13 +163,15 @@ def check_experimental_new_rule() -> GateResult:
     # 故意抛异常，模拟一个还不成熟的检查项写崩了
     raise RuntimeError("这个新检查还没写完")
 
+# 把三条检查项注册进Gate——第三条gating=False，即使它跑挂了
+# 也不会真的阻止发布。
 gate = Gate([
     GateCheck(name="guardrail_wired", gating=True, check_fn=check_guardrail_wired),
     GateCheck(name="pii_redaction", gating=True, check_fn=check_pii_redaction),
     GateCheck(name="experimental_new_rule", gating=False, check_fn=check_experimental_new_rule),
 ])
 
-decision = gate.run()
+decision = gate.run()   # 依次跑完全部检查，汇总出最终判定结果
 print("passed:", decision.passed)
 for blocker in decision.blockers:
     print(" -", blocker)
