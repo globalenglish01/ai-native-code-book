@@ -28,6 +28,43 @@ AI Native system:
 | `ainative-tenancy` | Tenant identity propagation (contextvar-based), per-tenant resource quotas for shared infrastructure, scoped-query helper that makes an unscoped/unfiltered query structurally impossible. |
 | `ainative-rag` | Document chunking with overlap-ratio validation, RRF-based hybrid search fusion, reranking score aggregation (missing scores default low, never a false-positive perfect score), a staged retrieve→generate pipeline with honest empty-result refusal and citation tracking, embedding batch accounting (hard error on count mismatch, never silent data loss), and freshness-aware cache keys. |
 
+## Architecture overview
+
+```mermaid
+graph TD
+    core["ainative-core<br/>Protocol接口 + 跨厂商模型工厂 + 内存版默认后端<br/>（唯一没有框架内部依赖的包）"]
+
+    guardrail["ainative-guardrail<br/>模型路由/预算护栏/幂等/背压"]
+    prompt["ainative-prompt<br/>Prompt版本/A-B路由/LLM评判"]
+    security["ainative-security<br/>PII脱敏/输出安全扫描"]
+    eval["ainative-eval<br/>FCARS治理门禁/评判聚合"]
+    memory["ainative-memory<br/>checkpoint/长期记忆/历史预算裁剪"]
+    mcp["ainative-mcp<br/>MCP配置组装/审计schema"]
+    workflow["ainative-workflow<br/>DAG编排/HITL中断"]
+    a2a["ainative-a2a<br/>Agent委派/能力发现"]
+    observability["ainative-observability<br/>结构化日志/追踪span"]
+    tenancy["ainative-tenancy<br/>租户身份/配额/查询作用域"]
+    rag["ainative-rag<br/>分块/混合检索/重排序/RAG流水线"]
+    cli["ainative-cli<br/>项目脚手架生成器<br/>（生成的代码引用其他包，自身零框架内依赖）"]
+
+    core --> guardrail
+    core --> prompt
+    core --> security
+    core --> eval
+    core --> memory
+    core --> a2a
+    core -.->|"声明依赖，但代码未实际import"| mcp
+    core -.->|"声明依赖，但代码未实际import"| workflow
+    core -.->|"声明依赖，但代码未实际import"| observability
+    core -.->|"声明依赖，但代码未实际import"| tenancy
+    core -.->|"声明依赖，但代码未实际import"| rag
+    cli -.->|"生成的项目代码引用，<br/>本包自身不依赖"| core
+
+    style core fill:#e8f4ff,stroke:#4a90d9,stroke-width:2px
+```
+
+**依赖关系解读**：这是本框架最核心的设计约束——除`ainative-core`外的12个包，只允许依赖`ainative-core`，永远不允许互相依赖（比如`ainative-a2a`不能依赖`ainative-workflow`）。这样任何一个包都可以被单独抽出来用在别的项目里，不会被迫拖进一整条依赖链。图中五条虚线（`mcp`/`workflow`/`observability`/`tenancy`/`rag`）标注的是`pyproject.toml`里声明了对`ainative-core`的依赖、但逐包核实源码后确认目前没有任何真正的`import`语句用到它（`ainative-workflow`的`graph.py`里虽然出现了"ainative_core"字样，但那只是一行解释性注释，不是真正的import）——这是Phase 2文档化过程中如实记录的现状，不是被忽略的问题：这五个包的功能本身确实不需要用到`ainative-core`目前提供的任何具体类型，保留依赖声明是为了未来如果需要复用`ainative-core`的`Protocol`定义时不需要再改`pyproject.toml`。`ainative-cli`同样特殊——它生成的*项目代码*会`import`其他包，但`ainative-cli`包自身的运行时代码不依赖任何框架内部包。
+
 ## Design principles
 
 - **No hard dependency on any specific database/message-queue product.** Every
