@@ -1,0 +1,24 @@
+[project]
+name = "ainative-tenancy"
+version = "0.1.0"
+description = "AI Native Framework多租户模块——租户身份传播、资源配额隔离、检索作用域断言"
+requires-python = ">=3.11"
+dependencies = [
+    "ainative-core",
+]
+
+[tool.uv.sources]
+ainative-core = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ainative_tenancy"]

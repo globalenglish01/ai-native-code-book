@@ -24,6 +24,8 @@ AI Native system:
 | `ainative-workflow` | Lightweight DAG orchestration engine (topological execution, conditional skip, pause/resume), HITL interrupt detection, timeout-safe-default policy. |
 | `ainative-a2a` | Agent-to-agent capability registry/discovery, task dispatch with delegation-depth and cycle protection, pluggable transport (in-process by default). |
 | `ainative-cli` | `ainative new <project> --type <type>` scaffolding — generates a runnable starter project wired to a sensible subset of the above packages. |
+| `ainative-observability` | Structured JSON logging with a unified sensitive-data redaction filter, lightweight tracing spans with correlation-ID linkage and export-failure self-monitoring. |
+| `ainative-tenancy` | Tenant identity propagation (contextvar-based), per-tenant resource quotas for shared infrastructure, scoped-query helper that makes an unscoped/unfiltered query structurally impossible. |
 
 ## Design principles
 
@@ -76,7 +78,10 @@ coverage in `examples/tests/`:
 | `eval_harness.py` | prompt, eval | Each eval case is scored by an ensemble of independent LLM-judge calls (median score, disagreement flagged as `high_uncertainty`); a deployment gate blocks the whole suite if any single case's judges disagreed too much, even when the average score looks fine. |
 | `devops_shell_agent.py` | security, mcp | Diagnostic shell command output (log tails, config dumps) is scanned before it re-enters the agent's context; a leaked API key or database URL gets redacted; every command is audited, and previously-redacted calls can be pulled up for a security review. |
 | `structured_extraction_agent.py` | guardrail, eval | Extracting structured fields (vendor/amount/date) from a document retries with the specific validation errors fed back into the next attempt, capped at a per-task-type retry budget; a filing gate blocks auto-filing extractions that never converged on valid output. |
-| `flagship_support_platform.py` | **all 10 packages** | The flagship, end-to-end example: `ainative-cli` scaffolds the project skeleton in one call, then a running support agent handles multi-turn chat (guardrail/prompt/memory/security, same pattern as `customer_support_bot.py`) and escalates billing disputes through a DAG (`ainative-workflow`) that pauses for human sign-off before delegating (`ainative-a2a`) to an audited (`ainative-mcp`) specialist agent — with PII redacted *before* it ever crosses the delegation boundary — gated by `ainative-eval` before deployment. |
+| `flagship_support_platform.py` | **all 10 core packages** | The flagship, end-to-end example: `ainative-cli` scaffolds the project skeleton in one call, then a running support agent handles multi-turn chat (guardrail/prompt/memory/security, same pattern as `customer_support_bot.py`) and escalates billing disputes through a DAG (`ainative-workflow`) that pauses for human sign-off before delegating (`ainative-a2a`) to an audited (`ainative-mcp`) specialist agent — with PII redacted *before* it ever crosses the delegation boundary — gated by `ainative-eval` before deployment. |
+| `multi_tenant_saas_platform.py` | tenancy, observability | A search query is structurally required to carry a tenant scope (there is no unscoped query path); one tenant exhausting its resource quota under load never affects another tenant's ability to search; every request gets a correlation-ID-linked trace span and structured, secret-redacted logs. |
+| `idempotent_payment_service.py` | guardrail | A client retry of the same order ID after a successful charge returns the cached result instead of charging the card twice; a mid-operation gateway failure releases the idempotency key so the customer can retry immediately once the outage clears, instead of being locked out for the full TTL window. |
+| `compliance_governance_suite.py` | eval | Multilingual fairness scoring is judged by its weakest language, not the average, so one underperforming language can't be masked by strong scores elsewhere; GDPR export/delete requests are proven to actually remove data from every registered source, with matching audit trails for both. |
 
 ```bash
 uv run python examples/products/customer_support_bot.py
@@ -92,6 +97,9 @@ uv run python examples/products/eval_harness.py
 uv run python examples/products/devops_shell_agent.py
 uv run python examples/products/structured_extraction_agent.py
 uv run python examples/products/flagship_support_platform.py
+uv run python examples/products/multi_tenant_saas_platform.py
+uv run python examples/products/idempotent_payment_service.py
+uv run python examples/products/compliance_governance_suite.py
 ```
 
 ## Status
@@ -106,6 +114,15 @@ uv run python examples/products/flagship_support_platform.py
   agent-to-agent delegation; both had deliberately chosen a lighter
   single-agent + staged-prompt + HITL-interrupt architecture instead) +
   `ainative-cli` (the scaffolding layer).
+- Batch 3: `ainative-observability` (structured logging + redaction filter +
+  tracing spans) and `ainative-tenancy` (tenant identity propagation +
+  resource quotas + scoped-query enforcement) — closing the two largest gaps
+  identified against `docs/ai-native-checklist.md`'s full knowledge-point
+  checklist (observability/H and multi-tenancy/E had no corresponding
+  package before this batch). Also extended `ainative-guardrail` with
+  idempotency-key management and `ainative-eval` with fairness-score
+  aggregation and a GDPR data-subject-rights service, closing narrower gaps
+  in the API-infrastructure (D) and compliance (J) categories.
 
 **Deferred:** `ainative-rag` (LightRAG-derived — requires careful separation
 of the user's own additions from LightRAG's upstream MIT-licensed code before

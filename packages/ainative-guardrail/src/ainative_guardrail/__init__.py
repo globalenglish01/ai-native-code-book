@@ -10,19 +10,33 @@ from ainative_guardrail.budget_middleware import (
     TokenCounter,
 )
 from ainative_guardrail.health_monitor import GuardHealthMonitorMiddleware
+from ainative_guardrail.idempotency import (
+    DEFAULT_TTL_SECONDS,
+    DuplicateOperationError,
+    IdempotencyRecord,
+    IdempotencyStatus,
+    InMemoryIdempotencyStore,
+    idempotent_operation,
+)
 from ainative_guardrail.limits import AgentLimit, AgentLimits
 from ainative_guardrail.model_router import ModelRouterMiddleware
 
 __version__ = "0.1.0"
 
 __all__ = [
+    "DEFAULT_TTL_SECONDS",
     "AgentLimit",
     "AgentLimits",
     "ConsecutiveCallGuardMiddleware",
     "ConsecutiveRetryGuardMiddleware",
+    "DuplicateOperationError",
     "GuardHealthMonitorMiddleware",
+    "IdempotencyRecord",
+    "IdempotencyStatus",
+    "InMemoryIdempotencyStore",
     "MCPCallLimiterMiddleware",
     "ModelRouterMiddleware",
     "TokenBudgetMiddleware",
     "TokenCounter",
+    "idempotent_operation",
 ]

@@ -56,3 +56,6 @@ jobs:
           uv run --python ${{ matrix.python-version }} python examples/products/devops_shell_agent.py
           uv run --python ${{ matrix.python-version }} python examples/products/structured_extraction_agent.py
           uv run --python ${{ matrix.python-version }} python examples/products/flagship_support_platform.py
+          uv run --python ${{ matrix.python-version }} python examples/products/multi_tenant_saas_platform.py
+          uv run --python ${{ matrix.python-version }} python examples/products/idempotent_payment_service.py
+          uv run --python ${{ matrix.python-version }} python examples/products/compliance_governance_suite.py

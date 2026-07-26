@@ -17,6 +17,8 @@ dev = [
     "ainative-workflow",
     "ainative-a2a",
     "ainative-cli",
+    "ainative-observability",
+    "ainative-tenancy",
 ]
 
 [tool.uv.sources]
@@ -30,6 +32,8 @@ ainative-mcp = { workspace = true }
 ainative-workflow = { workspace = true }
 ainative-a2a = { workspace = true }
 ainative-cli = { workspace = true }
+ainative-observability = { workspace = true }
+ainative-tenancy = { workspace = true }
 
 [project]
 name = "ai-native-code-book-workspace"
@@ -72,3 +76,9 @@ ignore = [
 "packages/ainative-security/tests/test_secret_drift.py" = ["S105", "S106"]
 "examples/products/content_moderation_pipeline.py" = ["S105"]
 "examples/tests/test_content_moderation_pipeline.py" = ["S105", "S106"]
+# 测试断言的是"字段值被脱敏成了[REDACTED]"这个行为本身，不是真实密钥。
+"packages/ainative-observability/tests/test_structured_logging.py" = ["S105"]
+# 内层with依赖外层span()yield出的parent对象作为参数传入，两层with无法
+# 合并成一条语句；BLE001是_redact_text对格式异常宽泛容错，故意如此。
+"packages/ainative-observability/tests/test_tracing.py" = ["SIM117"]
+"packages/ainative-observability/src/ainative_observability/structured_logging.py" = ["S110", "BLE001"]

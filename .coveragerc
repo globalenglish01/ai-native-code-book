@@ -10,3 +10,5 @@ source =
     packages/ainative-workflow/src
     packages/ainative-a2a/src
     packages/ainative-cli/src
+    packages/ainative-observability/src
+    packages/ainative-tenancy/src
