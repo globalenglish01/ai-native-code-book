@@ -15,20 +15,32 @@ def _make_result(*, usage_metadata=None, llm_output=None) -> LLMResult:
 
 def test_extract_usage_reads_input_and_output_tokens():
     result = _make_result(usage_metadata={"input_tokens": 42, "output_tokens": 7, "total_tokens": 49})
-    input_tokens, output_tokens = _extract_usage(result)
-    assert (input_tokens, output_tokens) == (42, 7)
+    input_tokens, output_tokens, usage_available = _extract_usage(result)
+    assert (input_tokens, output_tokens, usage_available) == (42, 7, True)
 
 
-def test_extract_usage_defaults_to_zero_when_missing():
+def test_extract_usage_reports_unavailable_rather_than_faking_zero_when_missing():
+    """The real-world bug class this guards against: a self-hosted vLLM/
+    SGLang backend often doesn't return usage_metadata at all — this must
+    be distinguishable from a genuine zero-token call, not silently
+    collapsed into the same (0, 0) result (which would make cost dashboards
+    misreport "usage unavailable" calls as free)."""
     result = _make_result(usage_metadata=None)
-    assert _extract_usage(result) == (0, 0)
+    input_tokens, output_tokens, usage_available = _extract_usage(result)
+    assert (input_tokens, output_tokens, usage_available) == (0, 0, False)
+
+
+def test_extract_usage_distinguishes_genuine_zero_from_unavailable():
+    result = _make_result(usage_metadata={"input_tokens": 0, "output_tokens": 0, "total_tokens": 0})
+    input_tokens, output_tokens, usage_available = _extract_usage(result)
+    assert (input_tokens, output_tokens, usage_available) == (0, 0, True)
 
 
 def test_extract_usage_sums_across_multiple_generations():
     msg1 = AIMessage(content="a", usage_metadata={"input_tokens": 10, "output_tokens": 1, "total_tokens": 11})
     msg2 = AIMessage(content="b", usage_metadata={"input_tokens": 20, "output_tokens": 2, "total_tokens": 22})
     result = LLMResult(generations=[[ChatGeneration(message=msg1)], [ChatGeneration(message=msg2)]])
-    assert _extract_usage(result) == (30, 3)
+    assert _extract_usage(result) == (30, 3, True)
 
 
 def test_extract_model_name_reads_model_name_field():
@@ -61,7 +73,27 @@ def test_callback_handler_records_a_usage_event_on_llm_end():
     assert event["provider"] == "anthropic"
     assert event["input_tokens"] == 100
     assert event["output_tokens"] == 20
+    assert event["usage_available"] is True
     assert "timestamp" in event
+
+
+def test_callback_handler_records_usage_available_false_for_self_hosted_backend_without_usage_metadata():
+    """A self-hosted inference endpoint (vLLM/SGLang) that doesn't return
+    usage_metadata must produce an event that's explicitly flagged as
+    having no usable cost/usage data, not one indistinguishable from a
+    genuinely free/zero-token call."""
+    sink = InMemoryUsageSink()
+    handler = UsageTrackingCallbackHandler(
+        sink, agent_name="a", provider="self_hosted_vllm", model_id="self_hosted:llama-3-70b",
+    )
+    result = _make_result(usage_metadata=None)
+
+    handler.on_llm_end(result, run_id=uuid4())
+
+    event = sink.events[0]
+    assert event["input_tokens"] == 0
+    assert event["output_tokens"] == 0
+    assert event["usage_available"] is False
 
 
 def test_callback_handler_falls_back_to_configured_model_id_when_response_has_none():
