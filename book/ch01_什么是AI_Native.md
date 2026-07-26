@@ -6,7 +6,11 @@
 
 ```python
 def handle_message(user_message: str) -> str:
+    # 直接把用户发的这句话原样丢给大模型，让它自己生成一句回复——
+    # 没有做任何预算限制、没有检查这句话里有没有"教唆"内容、
+    # 也没有判断模型给出的答案到底靠不靠谱。
     response = llm.chat(user_message)
+    # 把模型的回复原样返回给用户——同样没有做任何安全扫描。
     return response
 ```
 

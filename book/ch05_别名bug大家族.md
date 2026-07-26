@@ -5,9 +5,14 @@
 先看一段代码，猜猜它有没有bug：
 
 ```python
+# *configs——可变参数，调用方可以传任意数量个字典，函数内部会把
+# 它们统一收集成一个元组，比如merge_configs(a, b, c)时
+# configs就是(a, b, c)。
 def merge_configs(*configs: dict) -> dict:
-    merged = {}
+    merged = {}   # 用来收集最终合并结果的空字典
     for config in configs:
+        # dict.update(config)——把config里的每一对key:value，加入
+        # 或覆盖merged里同名的key。
         merged.update(config)
     return merged
 ```
@@ -17,9 +22,12 @@ def merge_configs(*configs: dict) -> dict:
 但如果你这样使用它：
 
 ```python
+# 一个嵌套三层的字典：最外层是"server"，里面又套了一层"env"，
+# env里面才是真正的TOKEN值。
 template = {"server": {"env": {"TOKEN": "old-token"}}}
 merged = merge_configs(template)
 
+# 只修改了merged这一个变量，看起来完全不会影响到template。
 merged["server"]["env"]["TOKEN"] = "new-token"
 
 print(template["server"]["env"]["TOKEN"])  # 猜猜输出什么？
@@ -40,11 +48,13 @@ Python里的变量不是"一个装着值的盒子"，而更像"贴在某个对�
 要让`merged`和`template`彻底独立，需要用Python标准库`copy`模块提供的`copy.deepcopy()`——**递归地**把一个对象内部所有嵌套的字典、列表都重新创建一份全新的、内存地址不同的副本：
 
 ```python
-import copy
+import copy  # Python标准库自带模块，专门提供拷贝相关的工具函数
 
 def merge_configs(*configs: dict) -> dict:
     merged = {}
     for config in configs:
+        # copy.deepcopy(config)——递归地把config内部所有嵌套的字典/
+        # 列表都重新创建一份全新副本，跟原始对象没有任何共享的内存地址。
         merged.update(copy.deepcopy(config))
     return merged
 ```
@@ -68,11 +78,18 @@ def merge_configs(*configs: dict) -> dict:
 
 ```python
 def register(self, agent_name: str, capability: AgentCapability) -> None:
+    # dict.setdefault(key, {})——如果这个key已经存在，直接返回它对应
+    # 的值；如果不存在，先用{}把它创建出来，再返回这个新创建的空字典。
+    # 这样不管agent_name是不是第一次出现，都能拿到一个可以往里塞数据的字典。
     bucket = self._capabilities.setdefault(agent_name, {})
     bucket[capability.name] = copy.deepcopy(capability)   # 写入时深拷贝
 
 def get_capability(self, agent_name: str, capability_name: str) -> AgentCapability | None:
+    # 连续两次.get(key, 默认值)——先按agent_name查，查不到就用空字典
+    # 兜底；再按capability_name查，查不到就返回None，不会抛KeyError。
     found = self._capabilities.get(agent_name, {}).get(capability_name)
+    # 条件表达式：如果找到了（不是None），返回它的一份深拷贝；
+    # 如果没找到，直接返回None。
     return copy.deepcopy(found) if found is not None else None   # 读出时也深拷贝
 ```
 
@@ -88,6 +105,7 @@ class AgentCapability:
     name: str
     input_schema: dict = field(default_factory=dict)
 
+# 创建一个实例，input_schema字段指向一个字典{"a": 1}。
 cap = AgentCapability(name="x", input_schema={"a": 1})
 cap.input_schema = {}          # 报错！frozen不允许重新赋值字段
 cap.input_schema["a"] = 999    # 完全合法！这是"修改字段指向的对象内容"，不是"重新赋值字段"

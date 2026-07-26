@@ -28,13 +28,21 @@ ainative_guardrail/
 理解这一整个包，最关键的是理解一个模式——LangChain的中间件是怎么"插入"到Agent执行流程里的。以最简单的调用次数限制器`MCPCallLimiterMiddleware`为例：
 
 ```python
+# class X(AgentMiddleware)——继承LangChain提供的中间件基类，
+# 才能被框架识别成"一个合法的中间件"、挂载进Agent的执行流程。
 class MCPCallLimiterMiddleware(AgentMiddleware):
     def wrap_tool_call(
         self,
         request: ToolCallRequest,
+        # handler的类型是Callable[[ToolCallRequest], ...]——
+        # 表示"一个函数，接收一个ToolCallRequest参数，返回工具调用结果"，
+        # 这里的handler就是"真正去执行这次工具调用"这个动作本身。
         handler: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
     ) -> ToolMessage | Command[Any]:
+        # 先判断这次调用要不要被拦截，返回值不是None就说明要拦截。
         short = self._maybe_short_circuit(request)
+        # 条件表达式：要拦截就返回拦截结果（不会真的执行handler）；
+        # 不需要拦截就调用handler(request)，让真正的工具执行。
         return short if short is not None else handler(request)
 ```
 
@@ -47,15 +55,21 @@ class MCPCallLimiterMiddleware(AgentMiddleware):
 值得留意的一个细节：当中间件决定拦截一次调用时，它构造的"合成消息"里的文字，是特意写给**AI模型自己**看的：
 
 ```python
+# ToolMessage是LangChain里表示"一次工具调用的结果"的标准数据类型，
+# 会被塞进对话历史，模型下一轮会"看到"这条消息的内容。
 return ToolMessage(
     content=(
+        # f-string——在字符串里用{}嵌入变量的值，这里把具体的limit
+        # 数字和工具名name拼进这句"写给AI看"的话里。
         f"[budget] Call cap of {limit} reached for tool '{name}'. "
         f"Use what you already have in this conversation; do NOT "
         f"call '{name}' again in this run."
     ),
+    # .get("id", "")——从这次请求里取出工具调用的id，取不到就用空
+    # 字符串兜底，保证这个字段肯定有值。
     tool_call_id=request.tool_call.get("id", ""),
     name=name,
-    status="error",
+    status="error",  # 明确告诉模型"这次调用没有成功"，不是一个正常结果
 )
 ```
 
@@ -73,12 +87,19 @@ return ToolMessage(
 ```python
 from ainative_guardrail.budget_middleware import MCPCallLimiterMiddleware
 
+# per_tool_limit——一个字典，规定每个工具名各自最多能被调用几次；
+# 这里设成"search_web最多调用2次"。
 limiter = MCPCallLimiterMiddleware(per_tool_limit={"search_web": 2})
 
+# 一个最简单的"假请求"类，只需要有tool_call这个属性，模拟真实的
+# ToolCallRequest长什么样，不需要引入真实框架的复杂类型。
 class FakeRequest:
     tool_call = {"name": "search_web", "id": "call-1"}
 
+# range(4)——循环4次（0、1、2、3），模拟连续调用同一个工具4次。
 for i in range(4):
+    # lambda r: "real result"——一个最简单的匿名函数，接收一个参数r，
+    # 直接返回字符串"real result"，模拟"工具真的执行后的结果"。
     result = limiter.wrap_tool_call(FakeRequest(), handler=lambda r: "real result")
     print(i, result)
 ```

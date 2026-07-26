@@ -8,9 +8,13 @@
 
 ```python
 class MemoryStore:
+    # 这个"基类"里的方法体是空的（只有...），意思是"具体怎么做，交给
+    # 继承它的子类去实现"，自己不提供任何真正的行为。
     def append(self, entry): ...
     def load_recent(self, owner_id): ...
 
+# class X(Y) 表示"X继承自Y"——PostgresMemoryStore从MemoryStore那里
+# 继承下来，必须自己重新实现append方法，才算真正"完成"了这个类。
 class PostgresMemoryStore(MemoryStore):
     def append(self, entry):
         # 真的连接Postgres写入
@@ -28,13 +32,25 @@ Python的`Protocol`（来自标准库`typing`模块）提供了一种不同的�
 来看`ainative-core`里真实的写法（[protocols.py:218-230](../packages/ainative-core/src/ainative_core/protocols.py)）：
 
 ```python
+# @runtime_checkable是一个"装饰器"（写在类/函数前面、以@开头的一行，
+# 用来给它增加额外能力）——这里让下面这个Protocol类，能在程序真正运行
+# 的时候，用isinstance()去检查"某个对象符不符合这份协议"。
 @runtime_checkable
+# class X(Protocol) 表示"这是一份接口约定，不是可以直接new出实例的
+# 普通类"——它只规定"必须有哪些方法、方法的参数和返回值长什么样"。
 class MemoryStore(Protocol):
+    # async def 表示这是一个"异步函数"——调用它的地方需要写
+    # await append(...)，等它真正执行完才继续往下走，适合"要等网络/
+    # 数据库这类耗时操作"的场景。
     async def append(self, entry: MemoryEntry) -> None:
         """追加一条新记忆。"""
+        # 方法体只有一个...（省略号），表示"这里不写具体怎么做，只是
+        # 声明这个方法必须存在、长这个样子"。
         ...
 
     async def load_recent(
+        # self之后的*表示：从这里往后的参数，调用时必须写成
+        # "参数名=值"的形式（比如max_items=5），不能只按位置传。
         self, owner_id: str, *, before_sequence: int | None = None, max_items: int = 10
     ) -> list[MemoryEntry]:
         ...
@@ -57,8 +73,13 @@ class MemoryStore(Protocol):
 `Protocol`默认只在你写代码、用类型检查工具（比如mypy）的时候起作用——运行时程序并不会真的去检查"这个对象符不符合协议"。加上`@runtime_checkable`装饰器后，你可以在程序运行时用`isinstance(obj, MemoryStore)`来判断一个对象是否满足这份协议：
 
 ```python
+# from 模块 import 名字——从ainative_core这个包里的protocols文件，
+# 把MemoryStore这个类型定义"拿过来"，才能在下面的代码里直接使用它。
 from ainative_core.protocols import MemoryStore
 
+# store: MemoryStore 是"类型注解"——告诉阅读代码的人（以及类型检查
+# 工具）"这个参数应该长得像一个MemoryStore"，但Python本身在运行时
+# 不会强制检查这一点，真正的检查靠下面这行isinstance()。
 def use_store(store: MemoryStore) -> None:
     print(isinstance(store, MemoryStore))  # True，只要store有对应的方法
 ```
@@ -70,11 +91,16 @@ def use_store(store: MemoryStore) -> None:
 `protocols.py`里除了Protocol，还大量使用了`@dataclass`——这是Python标准库另一个"减少样板代码"的工具。比如：
 
 ```python
+# @dataclass是一个装饰器，自动帮这个类生成构造函数(__init__)等样板
+# 代码——你只需要声明"这个类有哪些字段"。frozen=True表示"创建出来的
+# 实例，字段就不能再被修改了"（比如entry.sequence=5会直接报错）。
 @dataclass(frozen=True)
 class MemoryEntry:
-    owner_id: str
-    sequence: int
-    content: str
+    owner_id: str      # 这条记忆属于哪个用户/租户
+    sequence: int       # 这条记忆在同一个owner下的序号，用来排顺序
+    content: str        # 记忆的具体文字内容
+    # dict[str, Any]表示"一个字典，key是字符串，value可以是任意类型"；
+    # field(default_factory=dict)见下方正文详细解释——不能直接写`= {}`。
     metadata: dict[str, Any] = field(default_factory=dict)
 ```
 
@@ -96,11 +122,15 @@ class MemoryEntry:
 ```python
 from ainative_core.protocols import MemoryStore
 
+# 注意：这个类完全没有写`class FakeStore(MemoryStore):`——它跟
+# MemoryStore之间没有任何显式的继承关系，纯粹是自己"长得像"而已。
 class FakeStore:
-    async def append(self, entry): pass
+    async def append(self, entry): pass  # 方法体只有pass，什么也不做，但方法确实存在
     async def load_recent(self, owner_id, *, before_sequence=None, max_items=10): return []
     async def delete_by_owner(self, owner_id): return 0
 
+# FakeStore()——先创建一个FakeStore的实例；isinstance(实例, 协议类型)
+# 检查这个实例的方法签名跟协议要求的是否对得上。
 print(isinstance(FakeStore(), MemoryStore))  # 猜猜是True还是False？
 ```
 
