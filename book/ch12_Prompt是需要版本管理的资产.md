@@ -7,6 +7,8 @@
 大部分人写Agent的第一版代码，Prompt都是直接写死在代码里的字符串：
 
 ```python
+# 直接把Prompt文本写死成一个模块级常量——每次想改一个字，
+# 都要改代码、走一遍完整的代码发布流程。
 SYSTEM_PROMPT = "你是一个专业的客服助手，请礼貌地回答用户问题……"
 ```
 
@@ -23,7 +25,7 @@ class PromptVariant:
     content: str         # Prompt文本内容
     traffic_pct: int     # 应该分到的流量百分比（0-100）
     version: int          # 版本号，每次修改自增
-    is_active: bool = True
+    is_active: bool = True   # 这个变体目前是否生效，可以被下线而不删除记录
 ```
 
 一个Prompt的"位置"由`(agent_name, prompt_key)`这一对确定（比如"客服Agent的system_prompt"），这个位置下可以同时存在多个`PromptVariant`——这正是做A/B测试的基础：同一个位置，一部分流量走`variant="default"`，另一部分流量走`variant="v2"`，观察哪个效果更好。
@@ -37,15 +39,24 @@ class PromptVariant:
 ```python
 def ab_select_deterministic(variants: list[PromptVariant], thread_id: str | None) -> PromptVariant:
     ...
+    # or——thread_id如果是None（没有会话标识），就用固定字符串
+    # "anonymous"顶替；这一行本身就是下面要讲的"匿名陷阱"的根源。
     seed = thread_id or "anonymous"
+    # seed.encode()——把字符串转成字节序列（哈希函数处理的是字节）；
+    # hashlib.md5(...).hexdigest()算出一段固定长度的十六进制字符串；
+    # int(..., 16)把这串十六进制文本转换成一个巨大的整数。
     h = int(hashlib.md5(seed.encode(), usedforsecurity=False).hexdigest(), 16)
+    # h % 10000——取模运算，把这个巨大整数"压缩"到0-9999这个范围；
+    # 再除以10000.0变成0到1之间的小数，乘以total（流量总数）得到
+    # 一个"这次请求落在哪个刻度"的具体数值。
     threshold = (h % 10000) / 10000.0 * total
-    cumulative = 0.0
+    cumulative = 0.0   # 累计流量占比，从0开始逐步往上叠加
     for v in variants:
         cumulative += v.traffic_pct
+        # 只要threshold落在"目前为止累计到的区间"之内，就选中这个变体。
         if threshold < cumulative:
             return v
-    return variants[-1]
+    return variants[-1]   # 兜底：理论上不会走到这里，除非累计比例算错了
 ```
 
 核心机制是"哈希+累计区间判断"：把`thread_id`这个字符串，通过MD5哈希算法转换成一个巨大的数字，再对10000取模、除以10000，得到一个**0到1之间、看起来随机但完全确定性**的小数（同样的`thread_id`永远得到同样的小数）。再把每个变体的流量占比依次累加成一个"势力范围"区间（比如变体A占30%，对应区间`[0, 30)`；变体B占70%，对应区间`[30, 100)`），看这个小数（乘以总流量后）落在哪个区间里，就选中对应的变体。
@@ -57,6 +68,8 @@ def ab_select_deterministic(variants: list[PromptVariant], thread_id: str | None
 代码的docstring里坦诚地写明了一个容易被误用的细节：
 
 ```python
+# 所有thread_id为None的调用，都会用完全相同的字符串"anonymous"
+# 去算哈希——意味着它们全都会被分到同一个变体，不是均匀随机分散的。
 seed = thread_id or "anonymous"
 ```
 
@@ -88,11 +101,13 @@ seed = thread_id or "anonymous"
 from ainative_prompt.store import ab_select_deterministic
 from ainative_core.protocols import PromptVariant
 
+# 两个变体，a占30%流量，b占70%流量。
 variants = [
     PromptVariant(variant="a", content="版本A", traffic_pct=30, version=1),
     PromptVariant(variant="b", content="版本B", traffic_pct=70, version=1),
 ]
 
+# 依次用几个不同的会话标识去测试分流结果，最后两个None模拟匿名调用。
 for tid in ["user-1", "user-2", "user-3", None, None]:
     print(tid, "→", ab_select_deterministic(variants, tid).variant)
 ```
