@@ -1,12 +1,31 @@
 """把一个`ProjectTemplate`真正写到磁盘上，生成一个可运行的新项目目录。"""
 
+# 让类型注解可以延迟解析，详见ainative_core里的详细解释，这里不再重复。
 from __future__ import annotations
 
+# re——Python标准库自带的"正则表达式"模块，用来做"这段文字是否符合
+# 某种固定格式规则"的模式匹配。下面用它来校验用户输入的项目名是否
+# 只包含安全字符。
 import re
+
+# Path——Python标准库`pathlib`模块提供的"路径对象"，比直接拼接字符串
+# 操作文件路径（比如手写`dir + "/" + filename`）更安全、跨平台（不用
+# 自己处理Windows的反斜杠和Linux/Mac的正斜杠的差异），也提供了
+# `.exists()`/`.mkdir()`/`.iterdir()`这类好用的方法。
 from pathlib import Path
 
 from ainative_cli.templates import ProjectTemplate
 
+# `re.compile(...)`——把一段正则表达式字符串预先"编译"成一个可复用的
+# 匹配对象，存在模块级变量里，避免每次调用`scaffold_project()`都重新
+# 解析一遍这段正则表达式规则（编译一次、多次复用，效率更好）。
+# 正则表达式`^[A-Za-z0-9][A-Za-z0-9._-]*$`拆解开看：
+# - `^`和`$`——分别表示"字符串的开头"和"字符串的结尾"，两者合起来要求
+#   整个字符串从头到尾都必须匹配，而不是"字符串里某一部分包含匹配的
+#   片段就算数"。
+# - `[A-Za-z0-9]`——第一个字符必须是英文字母（大写或小写）或数字之一。
+# - `[A-Za-z0-9._-]*`——紧接着的其余字符（`*`表示"0个或多个"），允许是
+#   字母、数字，或者`.`、`_`、`-`这三个符号之一。
 _VALID_PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 """与PyPI包名规则一致的安全字符集——`project_name`会被原样拼进生成的
 `pyproject.toml`（TOML字符串字面量）和`README.md`里，不做校验的话，
@@ -22,14 +41,32 @@ class ProjectAlreadyExistsError(RuntimeError):
     保持一致的异常层级约定，方便调用方用`except RuntimeError`统一捕获
     这一类"状态冲突"错误，与`InvalidProjectNameError`这类"输入本身
     不合法"（继承`ValueError`）的错误类型区分开。"""
+    # ↑ 自定义异常类在Python里通常长这样：定义一个新的class，继承自某个
+    #   已有的内置异常类型（这里是`RuntimeError`），类本身不需要额外写
+    #   任何代码（只有一段说明用的docstring），继承关系本身就足够让它
+    #   "成为"一种可以被`raise`抛出、被`except`捕获的异常类型。
 
 
 class InvalidProjectNameError(ValueError):
     """`project_name`包含会破坏生成文件格式的字符时抛出。"""
+    # ↑ 这个异常继承自`ValueError`（而不是上面那个继承`RuntimeError`）
+    #   ——因为这里报的错是"调用方传进来的项目名这个参数值本身就不合法"，
+    #   `ValueError`正是Python里"参数值不符合预期"这类错误的标准基类，
+    #   这样的命名/继承约定让调用方能更精确地区分"是我输错了参数"还是
+    #   "环境状态导致操作没法继续"这两类性质不同的失败。
 
 
 def render_pyproject_toml(project_name: str, template: ProjectTemplate) -> str:
+    # 这是一个"生成器表达式"包在`"\n".join(...)`里的写法：对
+    # `template.packages`里的每一个包名`pkg`，生成一段
+    # `    "包名",`格式的文本（四个空格缩进 + 双引号包裹 + 末尾逗号，
+    # 这正是TOML文件里数组元素的标准写法），再用换行符把它们逐行连接
+    # 起来，拼成`dependencies = [...]`数组里的全部依赖行。
     deps = "\n".join(f'    "{pkg}",' for pkg in template.packages)
+    # 用一连串f-string（前面带`f`前缀的字符串，`{}`里可以直接嵌入变量
+    # 的值）拼出完整的`pyproject.toml`文本内容。Python会自动把相邻写在
+    # 一起、外层包着括号的多个字符串字面量拼接成一整个字符串，这里排成
+    # 一行对应生成文件的一行，方便对照阅读。
     return (
         f'[project]\n'
         f'name = "{project_name}"\n'
@@ -41,6 +78,8 @@ def render_pyproject_toml(project_name: str, template: ProjectTemplate) -> str:
 
 
 def render_readme(project_name: str, template: ProjectTemplate) -> str:
+    # 同样是生成器表达式+`join`：把每个依赖包名渲染成Markdown里的一条
+    # 无序列表项（`- \`包名\``），再逐行拼接起来。
     packages_list = "\n".join(f"- `{pkg}`" for pkg in template.packages)
     return (
         f"# {project_name}\n\n"
@@ -56,6 +95,9 @@ def render_readme(project_name: str, template: ProjectTemplate) -> str:
 
 
 def render_env_example() -> str:
+    # 生成`.env.example`的内容——一份"环境变量填写示例"，用户拿到新项目
+    # 之后按提示复制成`.env`并填入真实的密钥。这里没有用到任何传入参数，
+    # 内容对所有模板类型都是一样的固定文本。
     return (
         "# Copy to .env and fill in the values you need.\n"
         "ANTHROPIC_API_KEY=\n"
@@ -80,19 +122,46 @@ def scaffold_project(target_dir: Path, project_name: str, template: ProjectTempl
             （这些字符原样拼进生成的TOML/Markdown文件，不安全的字符会破坏格式）。
         ProjectAlreadyExistsError: `target_dir`已存在且非空，且`force=False`。
     """
+    # 函数参数列表里的这个单独的`*`，表示它后面的参数（这里是`force`）
+    # 必须用"参数名=值"的方式调用，比如`scaffold_project(a, b, c, force=True)`，
+    # 不能写成位置参数`scaffold_project(a, b, c, True)`。好处：调用方
+    # 必须显式写出`force=`，代码读起来一眼就知道这个True/False是在控制
+    # 什么，也避免未来给函数追加新参数时打乱位置对应关系。
+
+    # `.match(project_name)`——用前面预编译好的正则表达式去检查
+    # `project_name`是否符合"合法项目名"的格式；`not ...`取反，意味着
+    # "只要不匹配（即项目名不合法），就走进这个if分支去报错"。
     if not _VALID_PROJECT_NAME_RE.match(project_name):
         raise InvalidProjectNameError(
             f"invalid project name '{project_name}': must start with a letter or digit and "
             f"contain only letters, digits, '.', '_', or '-'"
         )
 
+    # `target_dir.exists()`——检查这个路径在磁盘上是否真的存在（不管是
+    # 文件还是目录）。`any(target_dir.iterdir())`——`target_dir.iterdir()`
+    # 会返回一个"目录里的每一项"的生成器（一边遍历一边产出，而不是一次性
+    # 把所有内容读进一个列表），`any(...)`检查这个生成器里"是否至少存在
+    # 一项"——只要目录里哪怕只有一个文件/子目录，就是True（即"非空"）。
+    # 三个条件都满足（目录存在 且 非空 且 调用方没有传force=True）才会
+    # 报错拒绝——这正是`force`参数存在的意义：让调用方可以显式选择
+    # "我知道这个目录已经有内容了，但我仍然要覆盖写入"。
     if target_dir.exists() and any(target_dir.iterdir()) and not force:
         raise ProjectAlreadyExistsError(
             f"target directory '{target_dir}' already exists and is not empty; pass force=True to overwrite"
         )
 
+    # `mkdir(parents=True, exist_ok=True)`——创建目标目录：
+    # - `parents=True`——如果目标路径的上级目录也不存在，一并自动创建
+    #   （类似shell命令`mkdir -p`），不需要调用方自己先手动建好每一层。
+    # - `exist_ok=True`——如果目录已经存在，不报错（默认情况下`mkdir()`
+    #   遇到目录已存在会抛异常），因为上面已经处理过"已存在且非空"的
+    #   拒绝逻辑，这里只是确保目录一定存在，不需要因为"已存在"本身报错。
     target_dir.mkdir(parents=True, exist_ok=True)
 
+    # 用一个字典把"要写哪个文件路径"和"对应的文件内容"配对起来——
+    # `target_dir / "pyproject.toml"`这种写法是`pathlib.Path`重载了
+    # 除号`/`运算符实现的"路径拼接"语法糖，等价于但比手动拼接字符串
+    # （还要操心不同系统的路径分隔符）更清晰安全。
     files = {
         target_dir / "pyproject.toml": render_pyproject_toml(project_name, template),
         target_dir / "README.md": render_readme(project_name, template),
@@ -100,8 +169,18 @@ def scaffold_project(target_dir: Path, project_name: str, template: ProjectTempl
         target_dir / ".env.example": render_env_example(),
     }
 
+    # `list[Path]`——类型注解，表示这是一个"列表，里面装的都是Path路径
+    # 对象"，用来收集下面循环里真正写入成功的每一个文件路径，最后作为
+    # 函数的返回值，让调用方知道具体生成了哪些文件（比如打印给用户看）。
     written: list[Path] = []
+    # `files.items()`——遍历字典时同时拿到每一对(key, value)，这里
+    # `path`是文件路径，`content`是要写入的文本内容。
     for path, content in files.items():
+        # `.write_text(content, encoding="utf-8")`——把字符串内容写入
+        # 这个路径对应的文件（文件不存在会自动创建，已存在则整个覆盖）。
+        # 显式指定`encoding="utf-8"`，保证不管在什么操作系统上运行，
+        # 写出来的文件编码都是统一的UTF-8，不受操作系统默认编码差异
+        # （比如Windows某些语言环境下默认不是UTF-8）的影响。
         path.write_text(content, encoding="utf-8")
         written.append(path)
     return written

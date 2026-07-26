@@ -4,27 +4,64 @@
 那是`scaffold.py`的职责，这样模板可以独立于文件系统单独测试。
 """
 
+# 让类型注解可以延迟解析，详见ainative_core里的详细解释，这里不再重复。
 from __future__ import annotations
 
+# dataclass——Python标准库提供的一个"装饰器"（写在类前面的`@xxx`），
+# 作用是自动帮你生成一个类的`__init__`（构造函数）、`__repr__`（打印时
+# 显示的样子）等样板代码，让你只需要声明"这个类有哪些字段"，不用自己
+# 手写一大堆重复代码。下面`ProjectTemplate`就用到了它。
 from dataclasses import dataclass
 
 
+# `@dataclass(frozen=True)` 这行是装饰器语法，意思是：
+# 1. dataclass——自动生成构造函数等样板代码（见上面的解释）。
+# 2. frozen=True——"冻结"这个类的实例，一旦创建出来，字段就不能再被
+#    修改（比如`template.name = "x"`会直接报错）。模板是"定义好之后
+#    不该再变"的静态数据，冻结可以防止代码某处不小心改动了共享的
+#    模板对象，影响到其他用到同一个模板的地方。
 @dataclass(frozen=True)
 class ProjectTemplate:
     """一种项目类型的完整模板定义。"""
 
+    # 下面这些是这个类的"字段"（也叫"属性"）——每一行`字段名: 类型`的
+    # 写法，dataclass会自动帮你变成构造函数里的一个参数。这几个字段都
+    # 没写默认值，意味着构造`ProjectTemplate(...)`时必须把它们都传全。
+
     name: str
+    # ↑ 模板名字（比如"minimal"、"customer-service"），会显示在
+    #   `ainative list-types`的输出里，也是`--type`参数接受的值。
+
     description: str
+    # ↑ 给人看的一句话描述，说明这个模板是做什么用的。
+
     packages: tuple[str, ...]
     """这种项目类型需要依赖的ainative-*包名（不含版本号，脚手架生成的
     pyproject.toml会引用真实发布的包，或者本地workspace路径——由调用方决定）。"""
+    # ↑ `tuple[str, ...]`表示"一个元组，里面装若干个字符串"（省略号表示
+    #   数量不固定）。之所以用元组（tuple）而不是列表（list），是因为
+    #   元组一旦创建就不能增删元素——配合类本身的`frozen=True`，让整个
+    #   模板对象（包括它内部的这个字段）从里到外都是真正不可变的，不会
+    #   出现"表面上frozen，内部list却被偷偷改了"这种半吊子安全。
 
     main_py: str
     """`main.py`的完整内容。"""
 
 
 def _render_main(body: str) -> str:
+    # 这是一个"模块内部私有"的辅助函数——函数名前面的下划线`_`是Python
+    # 的命名惯例，表示"这是本文件内部使用的实现细节，不建议外部代码
+    # 直接导入使用"（不是语法强制，只是约定）。它的作用是把每个模板都
+    # 需要的一段"公共头部代码"（未来类型注解声明、导入asyncio/sys、
+    # Windows下让终端正确显示UTF-8字符的兼容代码）拼在调用方传入的
+    # `body`（每个模板各自不同的业务逻辑代码）前面，避免每个模板都要
+    # 重复手写这几行样板代码。
     header = (
+        # 下面这一长串都是"字符串字面量"——用三引号`'''...'''`包裹的
+        # 多行文本（也叫"三重引号字符串"），Python会把相邻写在一起、
+        # 中间没有其他代码的多个字符串自动拼接成一个整体，效果等同于
+        # 手写一个大大的`+`把它们连起来，只是这样排版更整齐、每行对应
+        # 生成文件里的一行内容，更容易核对。
         '"""由 `ainative new` 生成的起始代码——自由修改，这只是一个可运行的起点。"""\n\n'
         "from __future__ import annotations\n\n"
         "import asyncio\n"
@@ -32,9 +69,16 @@ def _render_main(body: str) -> str:
         'if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):\n'
         '    sys.stdout.reconfigure(encoding="utf-8")\n\n'
     )
+    # 把公共头部和调用方传入的具体业务代码拼接成完整的`main.py`文本内容。
     return header + body
 
 
+# 下面几个变量是四种内置项目模板各自的`main.py`起始代码——都是先调用
+# `_render_main(...)`拼上公共头部，再传入这个模板类型特有的示例代码。
+# 之所以用三引号字符串整段整段地写"要生成的Python源码"，而不是用某种
+# 模板引擎（比如Jinja2），是因为这些内容本身就是纯静态文本、不需要
+# 按变量做任何替换——直接原样写成字符串常量最简单直接，也不需要给
+# 这个包多引入一个模板引擎依赖。
 _CUSTOMER_SERVICE_MAIN = _render_main(
     '''from ainative_core.config import ProviderConfig
 from ainative_core.protocols import GateCheck, GateResult, MemoryEntry, PromptVariant
@@ -191,6 +235,13 @@ if __name__ == "__main__":
 )
 
 
+# 这是整个模块最核心的"注册表"——一个字典（dict），key是模板名字符串
+# （和`ProjectTemplate.name`保持一致），value是对应的`ProjectTemplate`
+# 实例。`main.py`里的`--type`参数、`get_template()`查找、
+# `ainative list-types`列出全部类型，全都是围绕这一个字典展开的，
+# 新增一种项目模板只需要在这里加一条新的键值对。
+# `dict[str, ProjectTemplate]`是这个变量的类型注解，表示"一个字典，
+# key是字符串，value是ProjectTemplate实例"。
 TEMPLATES: dict[str, ProjectTemplate] = {
     "customer-service": ProjectTemplate(
         name="customer-service",
@@ -224,8 +275,25 @@ TEMPLATES: dict[str, ProjectTemplate] = {
 
 def get_template(name: str) -> ProjectTemplate:
     """按模板名查找模板定义；未找到时抛出`KeyError`，附带全部可用模板名。"""
+    # `try`/`except`是Python的"异常处理"语法：先尝试执行`try`块里的
+    # 代码，如果执行过程中出错，程序不会直接崩溃退出，而是跳转去执行
+    # 匹配的`except`块，做一些"补救"或"包装"处理。
     try:
+        # 用方括号`[name]`直接按key去字典里取值——如果`name`不在字典里，
+        # 这一行会抛出`KeyError`（Python字典查找失败时的标准异常类型）。
         return TEMPLATES[name]
     except KeyError:
+        # 捕获到"模板名不存在"这个异常后，不是原样把这个信息量很少的
+        # `KeyError`（只包含查找失败的key本身）往外抛，而是重新构造一个
+        # 带有更多上下文（列出所有合法可选项）的新`KeyError`，方便调用方
+        # （或者最终看到报错的人）知道"到底该输入哪些合法的模板名"。
+        # `sorted(TEMPLATES)`——对字典直接`sorted()`会按字典的key（也就是
+        # 模板名字符串）排序，返回一个排好序的名字列表；`", ".join(...)`
+        # 把这个列表拼接成一句"a, b, c"这样的逗号分隔文本，方便展示。
         available = ", ".join(sorted(TEMPLATES))
+        # `raise ... from None`——显式声明"这是一个全新构造的异常，不是
+        # 在原来那个异常的基础上包装的"，这样Python打印异常堆栈时不会
+        # 同时展示"在处理上面这个异常的过程中，又发生了下面这个异常"
+        # 这种冗长的、对使用者没有额外帮助的两层追溯信息，只展示这个
+        # 更友好的新异常本身。
         raise KeyError(f"unknown project type '{name}'. Available types: {available}") from None
