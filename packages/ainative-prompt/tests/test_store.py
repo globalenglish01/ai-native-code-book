@@ -70,6 +70,15 @@ def test_ab_select_deterministic_zero_traffic_falls_back_to_first():
     assert result.variant == "a"
 
 
+def test_ab_select_deterministic_raises_clear_error_for_empty_variants():
+    """ab_select_deterministic is public API, not just an internal helper
+    load_prompt() already guarantees non-empty input for — calling it
+    directly with an empty list must raise a clear ValueError, not an
+    unrelated IndexError from variants[0]."""
+    with pytest.raises(ValueError, match="non-empty"):
+        ab_select_deterministic([], "thread-1")
+
+
 def test_ab_select_deterministic_always_returns_one_of_the_candidate_variants():
     """`traffic_pct` is typed as int, so in normal use cumulative reaches
     exactly `total` on the last variant (integer addition has no precision

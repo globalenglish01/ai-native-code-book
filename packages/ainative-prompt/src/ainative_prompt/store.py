@@ -29,7 +29,15 @@ def ab_select_deterministic(variants: list[PromptVariant], thread_id: str | None
     如果匿名（无thread_id）调用在业务里占比不低，这部分流量不会参与真正的随机
     分流，统计A/B显著性时应该把匿名流量单独处理或排除，不要当作已经过公平
     随机分流的样本。
+
+    Raises:
+        ValueError: `variants`为空列表——本函数是公开API（不只是`load_prompt()`
+            内部一个已经保证非空调用的辅助函数），单独调用时必须对空输入给出
+            清晰的错误提示，而不是让`variants[0]`触发一个和"变体列表为空"这个
+            真实原因毫无关联的`IndexError`。
     """
+    if not variants:
+        raise ValueError("ab_select_deterministic requires a non-empty variants list")
     total = sum(v.traffic_pct for v in variants)
     if total <= 0:
         return variants[0]

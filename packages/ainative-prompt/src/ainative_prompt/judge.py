@@ -53,12 +53,26 @@ _HIGH_UNCERTAINTY_THRESHOLD = 0.4
 def _parse_judge_output(raw: str) -> dict[str, Any] | None:
     text = (raw or "").strip()
     if text.startswith("```"):
+        # 先剥离开头的```围栏，再单独处理"语言标签+换行"这一行——原来的
+        # `text.strip("`")`只去掉首尾的反引号字符本身，围栏语言标签
+        # （比如```python）如果不是"json"会连同标签文字一起残留在文本里，
+        # 导致后续`json.loads`直接失败，一次完全合法的judge响应被误判为
+        # "无法解析"。改成按行处理：第一行如果整体就是一个语言标签
+        # （不含json内容），直接丢弃这一行，不管标签具体是什么词。
         text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:]
+        first_line, _, rest = text.partition("\n")
+        if first_line.strip() and not first_line.strip().startswith(("{", "[")):
+            text = rest
     try:
         data = json.loads(text)
-        score = float(data["score"])
+        raw_score = data["score"]
+        if isinstance(raw_score, bool):
+            # Python的bool是int的子类，`float(True) == 1.0`能无声通过下面
+            # 的`float()`转换——一次judge模型误输出`{"score": true}`这种
+            # 格式错误的响应，会被当成"满分1.0"接受，而不是被识别为
+            # 格式不符合`{"score": <float 0-1>, ...}`约定的无效响应。
+            return None
+        score = float(raw_score)
         if not (0.0 <= score <= 1.0):
             return None
         return {"score": score, "reasoning": str(data.get("reasoning", ""))}

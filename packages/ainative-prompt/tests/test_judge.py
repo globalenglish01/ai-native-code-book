@@ -45,6 +45,24 @@ def test_parse_judge_output_returns_none_for_malformed_json():
     assert _parse_judge_output("not json at all") is None
 
 
+def test_parse_judge_output_rejects_boolean_score():
+    """Python's bool is an int subclass, so float(True) == 1.0 silently
+    passes the 0-1 range check — a judge model hallucinating a malformed
+    {"score": true} response must be rejected as invalid, not treated as
+    a maximally-confident real score of 1.0."""
+    assert _parse_judge_output('{"score": true, "reasoning": "ok"}') is None
+    assert _parse_judge_output('{"score": false, "reasoning": "bad"}') is None
+
+
+def test_parse_judge_output_strips_code_fence_with_non_json_language_tag():
+    """A judge model mislabeling the fence language (e.g. ```python instead
+    of ```json around otherwise-valid JSON) is a real, observed LLM habit
+    — the fence-stripping logic must not depend on the tag literally being
+    "json" to still extract valid JSON."""
+    raw = '```python\n{"score": 0.8, "reasoning": "good"}\n```'
+    assert _parse_judge_output(raw) == {"score": 0.8, "reasoning": "good"}
+
+
 @pytest.mark.asyncio
 async def test_judge_response_aggregates_median_score():
     model = _FakeModel([
