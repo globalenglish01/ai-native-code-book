@@ -15,6 +15,7 @@
 先看这个异常类的完整定义：
 
 ```python
+# class X(Exception)——自定义异常类型，继承自Python内置的Exception。
 class WorkflowPaused(Exception):
     """节点执行时抛出，表示"需要人工介入，在此暂停"（配合`ainative_workflow.hitl`使用）。
 
@@ -23,7 +24,10 @@ class WorkflowPaused(Exception):
     """
 
     def __init__(self, payload: Any = None) -> None:
+        # super().__init__(...)——调用父类Exception的构造函数，把这段
+        # 固定文字设成异常消息（str(exc)会得到这句话）。
         super().__init__("workflow paused, awaiting external input")
+        # 真正要展示给审批者的具体信息，存成独立属性，不混进异常消息文本里。
         self.payload = payload
 ```
 
@@ -40,13 +44,15 @@ class WorkflowPaused(Exception):
                 result = node.fn(run.context)
                 if hasattr(result, "__await__"):
                     result = await result
+            # WorkflowPaused必须写在Exception前面——它本身也是Exception
+            # 的子类，如果顺序反过来，会被下面更宽泛的分支误吞掉。
             except WorkflowPaused as paused:
-                run.node_status[name] = NodeStatus.PAUSED
-                run.paused_at = name
-                run.pause_payload = paused.payload
-                return run
-            except Exception as exc:  # noqa: BLE001
-                run.node_status[name] = NodeStatus.FAILED
+                run.node_status[name] = NodeStatus.PAUSED   # 标记为"暂停"，不是"失败"
+                run.paused_at = name   # 记录暂停在哪个节点
+                run.pause_payload = paused.payload   # 保存要展示给审批者的信息
+                return run   # 直接返回，不再跑剩余节点
+            except Exception as exc:  # noqa: BLE001  故意宽泛捕获,防止某个节点崩溃拖垮整个方法
+                run.node_status[name] = NodeStatus.FAILED   # 标记为"真正的失败"
                 run.failed_at = name
                 run.error = str(exc)
                 logger.warning("[Workflow] node '%s' failed: %s", name, exc)
@@ -93,15 +99,20 @@ def extract_interrupt(
     第一个，其余被静默丢弃。如果你的编排里存在多个独立触发中断的分支，
     需要改用能处理`list[dict]`的调用方式，不要依赖本函数的单值返回。
     """
+    # .get(key)——查不到就是None，而不是抛KeyError；"这次没发生中断"
+    # 是完全正常的情况，不应该被当成一次报错处理。
     interrupts = result.get(interrupt_key)
     if not interrupts:
-        return None
+        return None   # None或空列表都算"没有中断"
     if len(interrupts) > 1:
+        # 检测到多个并行中断——记一条警告，但仍然继续只处理第一个。
         logger.warning(
             "[HITL] detected %d parallel interrupts, only the first is handled, %d ignored",
             len(interrupts), len(interrupts) - 1,
         )
     first = interrupts[0]
+    # hasattr(first, "value")——判断这个对象身上有没有value这个属性；
+    # 兼容"包了一层的对象"和"裸字典"两种可能的返回形态。
     return first.value if hasattr(first, "value") else first
 ```
 
@@ -131,7 +142,7 @@ def extract_interrupt(
 看这个包给出的解法——先看构造超时决定的函数：
 
 ```python
-_SAFE_TIMEOUT_DECISION_TYPE = "reject"
+_SAFE_TIMEOUT_DECISION_TYPE = "reject"   # 唯一允许的超时决定类型，写死不可配置
 _DEFAULT_TIMEOUT_MESSAGE = "Approval timed out (no response within the timeout window); automatically rejected."
 
 
@@ -143,6 +154,7 @@ def safe_timeout_decision(message: str | None = None) -> dict:
     """
     return {
         "type": _SAFE_TIMEOUT_DECISION_TYPE,
+        # or——调用方传了message就用它，没传（None）就用默认提示文案。
         "message": message or _DEFAULT_TIMEOUT_MESSAGE,
     }
 ```
@@ -156,6 +168,8 @@ def safe_timeout_decision(message: str | None = None) -> dict:
 ```python
 def safe_timeout_decisions(count: int, message: str | None = None) -> list[dict]:
     """为`count`个待审批操作各生成一个安全的超时reject决定。"""
+    # max(0, count)——即使count意外传了负数，也强制归零成空循环；
+    # 列表推导式重复调用count次那唯一安全的构造入口，不另开新逻辑。
     return [safe_timeout_decision(message) for _ in range(max(0, count))]
 ```
 
@@ -166,18 +180,20 @@ def safe_timeout_decisions(count: int, message: str | None = None) -> list[dict]
 ```python
 def read_timeout_seconds(env_name: str, *, default: int = DEFAULT_TIMEOUT_SECONDS) -> int:
     """读取指定环境变量的超时秒数；缺失/非法/非正数都回退到`default`（fail-safe）。"""
-    raw = os.getenv(env_name)
+    raw = os.getenv(env_name)   # 读取环境变量，读不到就是None
     if raw is None:
-        return default
+        return default   # 第一层校验：压根没配置，直接用默认值
     try:
-        value = int(raw)
+        value = int(raw)   # 尝试转换成整数
     except (TypeError, ValueError):
+        # 第二层校验：配置了，但不是合法的数字字符串。
         logger.warning("HITL timeout config %s=%r is invalid, falling back to %ds", env_name, raw, default)
         return default
     if value <= 0:
+        # 第三层校验：是合法数字，但不是正数（0或负数没有意义）。
         logger.warning("HITL timeout config %s=%d is non-positive, falling back to %ds", env_name, value, default)
         return default
-    return value
+    return value   # 三层校验都通过，使用这个配置值
 ```
 
 这个函数处理"运维配置的超时环境变量"，有三层校验：环境变量压根没配置、配置了但不是合法数字、配置了合法数字但是0或负数——三种情况都不会让程序崩溃，而是打一条`WARNING`日志、回退到`default`（默认值是`DEFAULT_TIMEOUT_SECONDS = 86400`，也就是24小时）。这和`safe_timeout_decision`的"结构性安全"是两种不同、但互补的安全思路：`safe_timeout_decision`保证"超时后的决定类型不会被搞错"，`read_timeout_seconds`保证"就算超时时长这个配置项本身被运维配错了，系统也不会直接崩掉，而是回退到一个已知安全的默认值"，两者合在一起，才是一套完整的"人不回应该怎么办"的兜底方案。
@@ -201,11 +217,12 @@ from ainative_workflow.hitl_policy import safe_timeout_decision
 
 
 def fetch(ctx: dict) -> dict:
-    return {"amount": 8000}
+    return {"amount": 8000}   # 模拟一笔超过阈值的报销
 
 
 def request_approval(ctx: dict) -> str:
     if ctx["raw"]["amount"] > 5000:
+        # 主动抛出暂停异常，携带要展示给审批者的信息。
         raise WorkflowPaused(payload={"amount": ctx["raw"]["amount"], "reason": "超过主管免审阈值"})
     return "auto-approved"
 
@@ -216,13 +233,14 @@ wf = Workflow([
 ])
 
 run = asyncio.run(wf.run({}))
-assert run.is_paused
+assert run.is_paused   # 确认这次运行确实是"暂停"而不是"完成"或"失败"
 print("暂停在:", run.paused_at, "payload:", run.pause_payload)
 
 # 假设主管一直没回应，超时兜底：
 timeout_decision = safe_timeout_decision("主管24小时未响应，自动拒绝")
 print(timeout_decision)   # {'type': 'reject', 'message': '主管24小时未响应，自动拒绝'}
 
+# 用这份超时兜底决定作为resume_context，让流程从暂停点继续跑下去。
 run = asyncio.run(wf.resume(run, resume_context={"decision": timeout_decision}))
 print(run.is_completed, run.context["decision"])
 ```
