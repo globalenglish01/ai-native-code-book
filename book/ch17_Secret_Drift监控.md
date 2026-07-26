@@ -1,0 +1,94 @@
+# 第17章 —— Secret Drift监控
+
+代码位置：`packages/ainative-security/src/ainative_security/secret_drift.py`
+
+## 启动时检查过一次，就永远安全了吗？
+
+大部分项目都会在启动阶段做一次配置校验——比如检查"JWT密钥是不是还停留在示例配置里的默认值"，如果是就拒绝启动。这确实能保证"应用启动的那一刻，配置不是已知不安全的默认值"。但这里有一个容易被忽略的问题：**"启动那一刻"和"运行的这几个月里"是两个完全不同的时间点**。如果某次错误的运维操作、配置管理系统的一次异常回滚，导致运行中的进程"意外地"把一个原本正确的配置改回了不安全的默认值——启动时的校验早就过去了，不会再被触发，这个问题可能被悄悄遗留很长时间才被发现。
+
+这一章讲的`secret_drift.py`模块要解决的正是这个"运行期持续监控"的问题——**它假设配置在启动之后可能会"漂移"回不安全状态，需要周期性地重新检查**。
+
+## 规则复用：一份定义，两个触发时机
+
+这个模块最值得学的设计，藏在它的docstring里：
+
+> 把"规则"本身抽成`SecretRule`（`name`+`is_default`回调+`message`+`severity`），启动时校验和运行期巡检可以共用同一份规则列表。
+
+回忆一下第3章讲过的`SecretRule`：
+
+```python
+@dataclass(frozen=True)
+class SecretRule:
+    name: str
+    is_default: Callable[[Any], bool]
+    message: str
+    severity: Literal["fail", "warn"] = "fail"
+```
+
+`is_default`是"怎么判断这一项配置是否还停留在不安全默认值"这件事本身，被存成了一个函数（而不是写死成散落各处的`if`判断）。这意味着**同一份`list[SecretRule]`，既可以喂给"启动时做一次性强制校验、不通过就拒绝启动"的逻辑，也可以喂给这一章要讲的"运行期周期性巡检、发现问题只告警不阻断"的逻辑**——两处不需要各自维护一份几乎相同的判断代码，避免出现"启动时校验说这项配置安全，但运行期巡检的判断逻辑其实有些微差异，得出不同结论"这种令人困惑的不一致。**当你发现同一个判断逻辑需要在两个不同的触发时机被用到时，应该优先考虑把"判断逻辑本身"抽成可以传递的数据（或者说更精确地讲，可以传递的函数），而不是在两个地方各写一遍**。
+
+## 只读，绝不改变应用行为
+
+模块docstring列出的第一条设计原则是：
+
+> 只读检测+告警，绝不改变应用行为——不重启、不阻断、不自愈。
+
+这是一个刻意的克制。为什么不干脆"发现配置漂移了，就自动把它改回正确值"？因为**这个模块并不知道"漂移"背后真正的原因**——可能是一次意外的配置回滚（这种情况下"自动改回来"确实是对的），但也可能是运维正在有意进行一次真实的配置变更（这种情况下"自动改回来"反而是在阻挠一次合法的操作）。一个只做检测、只负责告警的模块，把"怎么处理这个问题"的决定权，完整地交还给能理解更多上下文的人类运维——这是"职责边界"设计的一个好例子：**监控系统的职责是"准确、及时地发现问题并告知"，不应该自作主张地"顺便"去解决它发现的问题**，除非这个动作被明确要求且完全可预测。
+
+## 周期性巡检：先睡眠，再检查
+
+```python
+async def secret_drift_check_loop(config, rules, *, interval_seconds=None, is_monitored_environment=True):
+    interval = (
+        interval_seconds if interval_seconds is not None
+        else _drift_check_interval_seconds("AINATIVE_SECRET_DRIFT_CHECK_INTERVAL_SECONDS")
+    )
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await run_secret_drift_check_once(config, rules, is_monitored_environment=is_monitored_environment)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[secret-drift] Check failed (non-fatal): %s", exc)
+```
+
+两个值得留意的细节：
+
+**"先睡眠，再检查"，而不是"先检查，再睡眠"**。注释里解释了原因——这个后台巡检任务通常是应用启动流程的一部分，如果一启动就立刻做一次检测，很可能会和"应用启动时刻"本身已经做过的那次校验挤在几乎同一个时间点，重复触发一次几乎一样的告警。把`sleep`放在循环最前面，让第一次真正的巡检检测发生在"启动之后过了一个完整间隔"的时候，天然错开了这个重复。
+
+**巡检本身出错，不能让整个`while True`循环终止**。`try/except`包住了每一轮检测——即使某一次检测因为某种意外抛出了异常，也只记一条警告日志，循环继续进行到下一轮`sleep`+检测。这是"长期运行的后台任务"一个通用的设计要求：**偶尔一次检测失败，不应该导致整个巡检功能从此永久停摆**，那样反而制造出一个"看起来在运行、实际上早就停止工作"的隐患，比"完全没有巡检"更危险，因为它给人一种虚假的安全感。
+
+## 本章小结
+
+- 启动时的配置校验只能保证"启动那一刻"是安全的，无法发现运行期间配置意外"漂移"回不安全状态的问题，需要额外的周期性巡检。
+- 把"判断逻辑"抽成可复用的数据结构（`SecretRule`），能让启动时校验和运行期巡检共用同一套规则，避免两处各自维护、逐渐产生不一致。
+- 监控/巡检类模块应该保持"只读检测+告警"的克制，不擅自改变应用状态——因为它通常无法判断问题背后的真实原因，应该把处理决定权交还给人。
+- 长期运行的后台循环，任何一次检测失败都不应该导致整个循环终止，否则会制造"看起来在运行、实际早已停止工作"的隐患。
+
+## 动手做
+
+```python
+import asyncio
+from ainative_security.secret_drift import detect_secret_drift
+from ainative_core.protocols import SecretRule
+
+class FakeConfig:
+    jwt_secret = "changeme"   # 一个明显不安全的默认值
+
+rules = [
+    SecretRule(
+        name="jwt_secret_is_default",
+        is_default=lambda cfg: cfg.jwt_secret == "changeme",
+        message="JWT密钥仍是不安全的默认值",
+        severity="fail",
+    ),
+]
+
+issues = detect_secret_drift(FakeConfig(), rules)
+print(issues)   # 应该输出那条message
+```
+
+## 面试可能会问
+
+**问：你的系统在启动时已经做了配置安全校验，还需要额外做什么吗？**
+
+答题思路：指出"启动时校验只能保证启动那一刻是安全的，无法发现运行期间的配置漂移"，并说明为什么需要一个独立的、周期性运行的巡检机制来补上这个盲区。如果能提到"两处校验共用同一份规则定义，避免逻辑重复和不一致"以及"巡检应该只读告警、不擅自修复"这两点设计考量，会体现出比"知道要定期检查"更深一层的工程判断力。
