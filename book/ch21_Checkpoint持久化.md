@@ -23,8 +23,11 @@
 ```python
 def __init__(
     self,
+    # Callable[[], Awaitable[Any]]——一个不接收参数、返回"可等待对象"
+    # 的函数，也就是一个异步函数本身，调用它才能拿到真正的存储句柄。
     build_saver: Callable[[], Awaitable[Any]],
     *,
+    # 元组里放的是"异常类型"本身（不是异常实例），默认只有ImportError。
     permanent_failure_types: tuple[type[BaseException], ...] = (ImportError,),
     retry_interval_seconds: float = 30.0,
 ) -> None:
@@ -32,10 +35,10 @@ def __init__(
     self._permanent_failure_types = permanent_failure_types
     self._retry_interval_seconds = retry_interval_seconds
 
-    self._saver: Any | None = None
-    self._permanently_failed = False
-    self._last_attempt_at: float | None = None
-    self._lock = asyncio.Lock()
+    self._saver: Any | None = None   # 缓存的存储句柄，一开始还没连接，是None
+    self._permanently_failed = False   # 是否已经判定为"永久性失败，不再重试"
+    self._last_attempt_at: float | None = None   # 上一次真正尝试连接是什么时候
+    self._lock = asyncio.Lock()   # 异步锁，防止多个协程同时抢着连接
 ```
 
 `build_saver`是调用方传进来的一个异步回调——真正去"连接数据库、返回一个能读写checkpoint的句柄"这件事，完全交给它去做。`CheckpointSaverFactory`本身不认识任何具体的数据库客户端，它只知道"调用这个函数，可能成功拿到一个东西，也可能失败"。
@@ -58,31 +61,35 @@ def __init__(
 
 ```python
 async def get(self) -> Any | None:
+    # 第一层检查（不用抢锁）：已经缓存过句柄，直接返回，这是最常见的快速路径。
     if self._saver is not None:
         return self._saver
     if self._permanently_failed:
-        return None
+        return None   # 已经判定永久失败，不再浪费时间尝试
 
-    async with self._lock:
+    async with self._lock:   # 需要真正尝试连接了——先拿锁，避免并发重复连接
+        # 第二层检查（拿到锁之后）：防止排队等锁期间，别的协程已经连接成功了。
         if self._saver is not None:
             return self._saver
         if self._permanently_failed:
             return None
 
         now = time.monotonic()
+        # 距离上一次尝试还没超过节流间隔——先别再试，直接返回None。
         if self._last_attempt_at is not None and (now - self._last_attempt_at) < self._retry_interval_seconds:
             return None
 
-        self._last_attempt_at = now
+        self._last_attempt_at = now   # 记录这次尝试的时刻，供下次节流判断用
         try:
-            self._saver = await self._build_saver()
+            self._saver = await self._build_saver()   # 真正调用调用方传入的连接函数
         except self._permanent_failure_types:
+            # 命中了"永久性失败"类型的异常——锁定状态，之后不再自动重试。
             self._permanently_failed = True
             return None
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001  故意宽泛捕获,归为暂时性失败
             # 暂时性失败：不锁定，下一次达到 retry_interval_seconds 后会再次尝试。
             return None
-        return self._saver
+        return self._saver   # 连接成功，返回真正的句柄
 ```
 
 `except self._permanent_failure_types:`这一句是分类的关键——`permanent_failure_types`是一个异常类型组成的元组（默认只有`ImportError`），Python的`except`允许直接传一个元组，表示"这几种异常类型里任意一种发生，都走这个分支"。命中之后，`self._permanently_failed`被设成`True`，之后所有`get()`调用都会在最前面那两行快速检查里直接返回`None`，不会再浪费时间尝试。
@@ -94,7 +101,8 @@ async def get(self) -> Any | None:
 光是"分类"还不够——如果每一次暂时性失败之后，下一次`get()`调用立刻又去重试，遇到数据库真的挂了几分钟的场景，会在几分钟内发起成百上千次连接尝试，反而给本就出问题的数据库雪上加霜。`retry_interval_seconds`就是用来解决这个问题的节流阀：
 
 ```python
-now = time.monotonic()
+now = time.monotonic()   # 单调递增的计时器读数，不受系统时钟调整影响
+# 既要"确实尝试过一次"，又要"离那次尝试还没过够节流间隔"，两个都满足才拒绝这次请求。
 if self._last_attempt_at is not None and (now - self._last_attempt_at) < self._retry_interval_seconds:
     return None
 ```
@@ -141,9 +149,9 @@ async with self._lock:
 
 ```python
 def reset(self) -> None:
-    self._saver = None
-    self._permanently_failed = False
-    self._last_attempt_at = None
+    self._saver = None   # 清空已缓存的句柄，下次get()会重新尝试连接
+    self._permanently_failed = False   # 解除"永久性失败"锁定
+    self._last_attempt_at = None   # 清空上次尝试时刻，节流计时重新开始
 ```
 
 这个方法不是`async`的——它只是把几个状态变量清零，没有任何需要"等待"的操作，因此没必要写成异步方法。它的价值在于给两类场景留了一个显式的"重新开始"入口：一类是自动化测试之间需要相互隔离，不能让上一个测试用例留下的缓存句柄或"永久性失败"标志影响到下一个测试；另一类是真实运维场景——如果运维人员发现是因为忘了给容器镜像装某个依赖包才触发了永久性失败，装好依赖之后，理论上不需要重启整个进程，调用一次`reset()`就能让下一次`get()`重新尝试。当然，多数生产环境里"重启进程"往往比"调用一个内部reset方法"更简单可靠，但这个方法的存在，至少说明设计者认真考虑过"永久性失败不代表永远无法恢复，只是代表'不应该自动重试'"这件事。
@@ -162,16 +170,19 @@ def reset(self) -> None:
 import asyncio
 from ainative_memory.checkpoint import CheckpointSaverFactory
 
-attempt_count = 0
+attempt_count = 0   # 模块级变量，用来记录这个演示函数被调用了几次
 
 async def flaky_build_saver():
+    # global——声明要修改的是外层的attempt_count这个模块级变量，
+    # 而不是在函数内部创建一个同名的新局部变量。
     global attempt_count
     attempt_count += 1
     if attempt_count < 3:
-        raise ConnectionError("数据库暂时连不上")
-    return {"handle": "fake-saver"}
+        raise ConnectionError("数据库暂时连不上")   # 前两次故意失败，模拟暂时性故障
+    return {"handle": "fake-saver"}   # 第三次开始"恢复正常"，模拟故障自愈
 
 async def main():
+    # retry_interval_seconds=0——把节流时间设为0，这样演示时不需要真的等待。
     factory = CheckpointSaverFactory(flaky_build_saver, retry_interval_seconds=0)
     for i in range(4):
         saver = await factory.get()
