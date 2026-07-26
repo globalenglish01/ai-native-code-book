@@ -32,12 +32,14 @@ def _topological_order(nodes: dict[str, WorkflowNode]) -> list[str]:
 **第一步：计算每个节点的入度。**
 
 ```python
+    # 字典推导式：给每个节点名建一个entry，初始入度都是0。
     in_degree = {name: 0 for name in nodes}
-    for node in nodes.values():
-        for dep in node.depends_on:
+    for node in nodes.values():   # 遍历每一个节点
+        for dep in node.depends_on:   # 遍历这个节点声明依赖的每一个上游
             if dep not in nodes:
+                # 依赖了一个压根不存在的节点名——这是定义本身的错误，立刻报错。
                 raise ValueError(f"node '{node.name}' depends on unknown node '{dep}'")
-            in_degree[node.name] += 1
+            in_degree[node.name] += 1   # 每发现一条依赖关系，入度加1
 ```
 
 先给每个节点的入度都初始化成0（`{name: 0 for name in nodes}`是一个字典推导式，等价于对每个节点名建一个entry，值都是0）。然后遍历一遍所有节点，看它声明了哪些`depends_on`——每发现一条"A依赖B"的关系，就把A的入度加1。
@@ -47,9 +49,11 @@ def _topological_order(nodes: dict[str, WorkflowNode]) -> list[str]:
 **第二步：建立反向索引。**
 
 ```python
+    # 反向索引：key是"我"，value是"依赖了我的那些节点名字组成的列表"。
     dependents: dict[str, list[str]] = {name: [] for name in nodes}
     for node in nodes.values():
         for dep in node.depends_on:
+            # dep是node依赖的上游——把node.name记录进dep的下游列表里。
             dependents[dep].append(node.name)
 ```
 
@@ -58,15 +62,17 @@ def _topological_order(nodes: dict[str, WorkflowNode]) -> list[str]:
 **第三步：核心循环——反复取走入度为0的节点。**
 
 ```python
+    # 生成器表达式+sorted——找出所有入度已经是0的节点名，按字母序排好，
+    # 保证同一份定义每次跑出的顺序都一样，不依赖字典遍历的随机性。
     ready = sorted(name for name, deg in in_degree.items() if deg == 0)
-    order: list[str] = []
-    while ready:
-        current = ready.pop(0)
-        order.append(current)
-        for dependent in sorted(dependents[current]):
-            in_degree[dependent] -= 1
+    order: list[str] = []   # 最终排好序的执行顺序
+    while ready:   # 只要还有"可以立刻执行"的节点，就继续循环
+        current = ready.pop(0)   # 取出最前面一个（先进先出）
+        order.append(current)   # 加入最终结果，代表"这个节点排序意义上处理完了"
+        for dependent in sorted(dependents[current]):   # 遍历它的每一个下游节点
+            in_degree[dependent] -= 1   # 下游的入度减1，因为它依赖的这一个已经满足
             if in_degree[dependent] == 0:
-                ready.append(dependent)
+                ready.append(dependent)   # 减到0了，加入下一轮候选队列
 ```
 
 `ready`是"当前入度为0、可以立刻执行"的节点名列表。初始值是所有入度本来就是0的节点（这些节点谁都不依赖，从一开始就可以执行）。
@@ -84,7 +90,9 @@ def _topological_order(nodes: dict[str, WorkflowNode]) -> list[str]:
 ## 环检测：为什么"取不完"就一定是有环
 
 ```python
-    if len(order) != len(nodes):
+    if len(order) != len(nodes):   # 排好序的节点数和总节点数对不上——说明有节点永远没能入度归零
+        # 集合差集运算：算出"在原始节点集合里、但没出现在order里"的那些，
+        # 这些就是被卡在环里（或依赖了环上节点）的节点。
         remaining = set(nodes) - set(order)
         raise ValueError(f"workflow graph has a cycle involving: {sorted(remaining)}")
     return order
@@ -121,10 +129,11 @@ from ainative_workflow import Workflow, WorkflowNode
 
 
 def noop(ctx: dict) -> None:
-    return None
+    return None   # 一个什么都不做的占位函数，这个演示只关心结构本身
 
 
 try:
+    # a依赖b、b又依赖a——一个明显的循环依赖，构造Workflow时就应该报错。
     wf = Workflow([
         WorkflowNode(name="a", fn=noop, depends_on=("b",)),
         WorkflowNode(name="b", fn=noop, depends_on=("a",)),
